@@ -2,6 +2,7 @@
 
 #include "ClockMath.hpp"
 #include "kvasir/Register/Register.hpp"
+#include "kvasir/Util/HealthKey.hpp"
 #include "peripherals/DBG.hpp"
 #include "peripherals/IWDG.hpp"
 
@@ -22,9 +23,17 @@
 //
 // It is held while a debugger halts the core (DBGMCU_APB1_FZ.DBG_IWDG_STOP, 34.16.4), so a
 // breakpoint does not reset the board.
+//
+// Gated (`Watchdog<500, true>`): only Kvasir::Health::Supervisor starts and feeds it
+// (Util/HealthKey.hpp) - start() and the plain feed() do not compile, arm(FeedKey) and
+// feed(FeedKey) take the supervisor's key; its first service() arms. There is no disarm (the
+// hardware has none), so Supervisor::holdOff() is not there for this watchdog: it only runs
+// once the supervisor started it.
 namespace Kvasir { namespace Iwdg {
-    template<std::uint64_t TimeoutMs>
+    template<std::uint64_t TimeoutMs, bool Gated = false>
     struct Watchdog {
+        static constexpr bool GatedFeed = Gated;
+
         static constexpr std::uint64_t timeoutUs = TimeoutMs * 1000;
         static constexpr Setting       setting   = settingFor(timeoutUs);
         static_assert(std::uint64_t{4U << setting.pr} * (setting.rlr + 1) * 1'000'000 / lsiMaxHz
@@ -41,16 +50,43 @@ namespace Kvasir { namespace Iwdg {
 
         // KR 0xCCCC first (it starts the LSI), then 0x5555 and the setting; PR/RLR take effect once
         // SR.PVU/RVU drop (22.4.4), which the first feed() does not need to wait for.
-        static void start() {
+        static void start()
+            requires(!Gated)
+        {
+            startAndReload();
+        }
+
+        static void feed()
+            requires(!Gated)
+        {
+            reload();
+        }
+
+        /// The gated start: Supervisor::service() does it at its first turn.
+        static void arm(Kvasir::Health::FeedKey)
+            requires(Gated)
+        {
+            startAndReload();
+        }
+
+        /// The gated feed: only the health supervisor holds a key.
+        static void feed(Kvasir::Health::FeedKey)
+            requires(Gated)
+        {
+            reload();
+        }
+
+    private:
+        static void startAndReload() {
             apply(write(DBG::DBGMCU_APB1_FZ::iwdeg_stop, Register::value<std::uint32_t, 1>()));
             apply(write(IWDG::KR::key, Register::value<std::uint32_t, 0xCCCC>()));
             apply(write(IWDG::KR::key, Register::value<std::uint32_t, 0x5555>()));
             apply(write(IWDG::PR::pr, Register::value<std::uint32_t, setting.pr>()));
             apply(write(IWDG::RLR::rl, Register::value<std::uint32_t, setting.rlr>()));
-            feed();
+            reload();
         }
 
-        static void feed() {
+        static void reload() {
             apply(write(IWDG::KR::key, Register::value<std::uint32_t, 0xAAAA>()));
         }
     };

@@ -37,3 +37,10 @@ learn here, dated, in the same turn.
   to 2 s (128 KiB sector).
 - I2C: standard mode below 88 kHz (errata 2.11.4), BERR ignored (2.11.1), SWRST after a stuck bus
   (2.11.3).
+- IWDG gate (2026-10-05): `Kvasir::Iwdg::Watchdog<ms, true>` is fed and started only by
+  `Kvasir::Health::Supervisor` (`arm(FeedKey)`, `feed(FeedKey)`; `start()` and the plain `feed()` do not
+  compile). An IWDG cannot be stopped (RM0430 22.4.1), so the supervisor has no `holdOff()` over it and the
+  watchdog only runs once the supervisor's first `service()` started it. Ungated (`Watchdog<ms>`, psu302) is
+  unchanged: release images byte-identical. Checked by `tests/firmware/iwdg_gate.cpp`, compiled with psu302's
+  own compile command (`tests/firmware_check.py`, ctest `fw_iwdg_gate`; left out without a configured psu302
+  tree). Not run on a board.

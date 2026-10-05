@@ -44,6 +44,23 @@ foreach(core_dir ${CMAKE_CURRENT_LIST_DIR}/../core ${CMAKE_CURRENT_LIST_DIR}/../
     endif()
 endforeach()
 
+# Chip headers that need the generated registers and a board (Iwdg.hpp's gate), compiled the way psu302 compiles its
+# main.cpp: firmware_check.py takes the command from a configured psu302 tree, -fsyntax-only. Left out with a note when
+# there is none (a lone checkout).
+set(STM32F413_FIRMWARE_TREE
+    "${CMAKE_CURRENT_LIST_DIR}/../../psu302/build"
+    CACHE PATH "a configured psu302 build tree for the firmware checks")
+if(Python3_FOUND AND EXISTS ${STM32F413_FIRMWARE_TREE}/compile_commands.json)
+    file(GLOB _fw CONFIGURE_DEPENDS ${CMAKE_CURRENT_LIST_DIR}/firmware/*.cpp)
+    foreach(_file IN LISTS _fw)
+        get_filename_component(_name ${_file} NAME_WE)
+        add_test(NAME fw_${_name} COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_LIST_DIR}/firmware_check.py
+                                          ${STM32F413_FIRMWARE_TREE}/compile_commands.json psu302/src/main.cpp ${_file})
+    endforeach()
+else()
+    message(STATUS "firmware checks left out: ${STM32F413_FIRMWARE_TREE} is not a configured psu302 tree")
+endif()
+
 # The write-only guard: every write-only field of this chip's SVD(s) is classified (oneToSet, a key, or <!-- Kvasir:
 # write-only accepted -->), so svd_converter --write-only-guard=error must exit 0. Needs the SDK's svd_converter (the
 # sibling checkout's submodule); left out without it.
