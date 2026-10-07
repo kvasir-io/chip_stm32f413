@@ -27,7 +27,8 @@ Every hardware fact in them cites RM0430 Rev 8, DS11581 Rev 7 or ES0372 Rev 8 (a
 | `StartUp.hpp` | FPU on (core), clocks of every bonded GPIO port, DSB (errata 2.2.7) |
 | `Interrupt.hpp` | the 102 vectors of RM0430 Table 40 (not the SVD's list: it misses WWDG, OTG_FS, QUADSPI) |
 | `Io.hpp` | GPIO: input, output, analog, alternate function (AF number from DS11581 Table 12), set/clear via BSRR, toggle via ODR |
-| `Rcc.hpp` | `ClockTree<crystal, sysclk>`: PLL solved at compile time, regulator scale, flash wait states + caches, APB prescalers; `init()` never hangs (HSE failure -> stays on HSI, `Rcc::lastInit`) |
+| `Rcc.hpp` | `ClockTree<crystal, sysclk>`: PLL solved at compile time, regulator scale, flash wait states + caches, APB prescalers; `init()` never hangs (HSE failure -> stays on HSI; `Rcc::initResult()` reads back how far it got) |
+| `Can.hpp` | `Can::Bus<Clocks, 1, bitrate, Rx, Tx, Af>`: bxCAN1 polled - bit timing solved at compile time, filter bank 0 = everything to FIFO 0, `send`/`receive`/`status`, bus-off left by the hardware (ABOM) |
 | `ClockMath.hpp` | the arithmetic of the above and of the dividers below, register-free for the host tests |
 | `PM.hpp` | `PM::reset_cause()` from RCC_CSR (and clears the flags) |
 | `Timer.hpp` | `Tick` (update interrupt at a rate), `Pwm` (channels 1-2), `Counter` (free-running 32 bit on TIM2/5) |

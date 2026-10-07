@@ -171,10 +171,19 @@ namespace Kvasir { namespace Timer {
           = list(write(Regs::PSC::FULLREGISTER, Register::value<std::uint32_t, division.psc>()),
                  write(Regs::ARR::FULLREGISTER,
                        Register::value<std::uint32_t, static_cast<std::uint32_t>(division.arr)>()),
-                 // UG loads PSC (it is buffered: 18.4.11); URS keeps that UG from raising UIF.
                  write(Regs::CR1::urs, Register::value<std::uint32_t, 1>()),
-                 write(Regs::EGR::ug, Register::value<std::uint32_t, 1>()),
                  write(Regs::DIER::uie, Register::value<std::uint32_t, 1>()));
+
+        // UG loads PSC (it is buffered: 18.4.11); URS keeps that UG from raising UIF - but only
+        // once URS is written, and one list's writes go out highest address first: EGR (0x14)
+        // before CR1 (0x00). UG in the list raised UIF, and the interrupt fired the moment Startup
+        // enabled the NVIC, before the other peripherals were enabled (psu302, 2026-10-06: the
+        // dither tick spun in Spi::waitIdle on a disabled SPI, main() never ran). Hence here, after
+        // the configuration and before the NVIC enable.
+        static void preEnableRuntimeInit() {
+            apply(write(Regs::EGR::ug, Register::value<std::uint32_t, 1>()));
+        }
+
         static constexpr auto initStepInterruptConfig
           = list(Nvic::makeSetPriority<Priority>(Irq{}), Nvic::makeClearPending(Irq{}));
         static constexpr auto initStepPeripheryEnable

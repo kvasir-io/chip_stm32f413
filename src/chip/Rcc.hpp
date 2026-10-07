@@ -20,20 +20,25 @@
 //     static_assert(Tree::pll.m == 4 && Tree::pll.n == 100);
 //     Tree::init();   // in ClockSettings::coreClockInit
 //
-// init() never waits for ever: an HSE that does not start leaves the chip on the 16 MHz HSI and
-// says so in Rcc::lastInit (a board without its crystal still boots and logs - at the wrong
-// clock, which the log line shows).
+// init() never waits for ever: an HSE that does not start leaves the chip on the 16 MHz HSI, and
+// Rcc::initResult() says so once logging runs (a board without its crystal still boots and logs -
+// at the wrong clock, which the log line shows).
+//
+// init() runs in ClockSettings::coreClockInit(), before Startup sets up .data and .bss (so that
+// runs at full speed): it writes registers only. A variable it set would be wiped by the .bss
+// clear (psu302, 2026-10-06: "clock init notRun" with the PLL running). How far it got is read
+// back from RCC instead - every reset but a power-on one puts RCC_CR and RCC_CFGR back to their
+// reset values too (RM0430 Rev 8 6.1.2, "A system reset sets all registers to their reset values
+// except the reset flags in the clock controller CSR register and the registers in the Backup
+// domain").
 namespace Kvasir { namespace Rcc {
     enum class InitResult : std::uint8_t {
         notRun,
         ok,
-        hseDidNotStart,   // stayed on HSI, nothing else changed
+        hseDidNotStart,   // stayed on HSI, the HSE left enabled (it may still start: unused then)
         pllDidNotLock,    // stayed on HSI (with the flash wait states already raised)
         switchDidNotTakeEffect,
     };
-
-    /// What the last ClockTree::init() did - for a log line once logging runs.
-    inline InitResult lastInit = InitResult::notRun;
 
     namespace Detail {
         using RCC   = Kvasir::Peripheral::RCC::Registers<>;
@@ -51,6 +56,20 @@ namespace Kvasir { namespace Rcc {
             return false;
         }
     }   // namespace Detail
+
+    /// How far ClockTree::init() got, from the registers it leaves behind (RM0430 Rev 8 6.3.1
+    /// RCC_CR: HSEON bit 16, PLLON 24, PLLRDY 25, reset 0x0000 XX81 = both off; 6.3.3 RCC_CFGR:
+    /// SWS bits 3:2, 10 = PLL). Each failure leaves a state no earlier step does: init() turns the
+    /// HSE on first and the PLL on only after HSERDY. Read after a later clock change it describes
+    /// that one.
+    inline InitResult initResult() {
+        using RCC = Detail::RCC;
+        if(apply(read(RCC::CFGR::sws)) == 0b10) { return InitResult::ok; }
+        if(apply(read(RCC::CR::hseon)) == 0) { return InitResult::notRun; }
+        if(apply(read(RCC::CR::pllon)) == 0) { return InitResult::hseDidNotStart; }
+        if(apply(read(RCC::CR::pllrdy)) == 0) { return InitResult::pllDidNotLock; }
+        return InitResult::switchDidNotTakeEffect;
+    }
 
     template<std::uint32_t InputHz,
              std::uint32_t SysclkHz,
@@ -101,9 +120,7 @@ namespace Kvasir { namespace Rcc {
             apply(write(RCC::CR::hsebyp, Register::value<std::uint32_t, HseBypass ? 1 : 0>()));
             apply(write(RCC::CR::hseon, Register::value<std::uint32_t, 1>()));
             if(!waitFor([] { return apply(read(RCC::CR::hserdy)) != 0; })) {
-                apply(write(RCC::CR::hseon, Register::value<std::uint32_t, 0>()));
-                lastInit = InitResult::hseDidNotStart;
-                return;
+                return;   // HSEON stays set: initResult() tells this from "never ran" by it
             }
 
             // Flash: wait states, instruction and data cache, prefetch (3.8.1 FLASH_ACR). A whole
@@ -125,10 +142,7 @@ namespace Kvasir { namespace Rcc {
                   write(RCC::PLLCFGR::pllq, Register::value<std::uint32_t, pll.q>()),
                   write(RCC::PLLCFGR::pllr, Register::value<std::uint32_t, pll.r>()));
             apply(write(RCC::CR::pllon, Register::value<std::uint32_t, 1>()));
-            if(!waitFor([] { return apply(read(RCC::CR::pllrdy)) != 0; })) {
-                lastInit = InitResult::pllDidNotLock;
-                return;
-            }
+            if(!waitFor([] { return apply(read(RCC::CR::pllrdy)) != 0; })) { return; }
             // PWR_CSR VOSRDY (5.4.2): the new scale is applied once the PLL runs.
             waitFor([] { return apply(read(PWR::CSR::vosrdy)) != 0; });
 
@@ -136,11 +150,7 @@ namespace Kvasir { namespace Rcc {
                   write(RCC::CFGR::ppre1, Register::value<std::uint32_t, ppreBits(apb1Divider)>()),
                   write(RCC::CFGR::ppre2, Register::value<std::uint32_t, ppreBits(apb2Divider)>()));
             apply(write(RCC::CFGR::sw, Register::value<std::uint32_t, 0b10>()));   // PLL
-            if(!waitFor([] { return apply(read(RCC::CFGR::sws)) == 0b10; })) {
-                lastInit = InitResult::switchDidNotTakeEffect;
-                return;
-            }
-            lastInit = InitResult::ok;
+            waitFor([] { return apply(read(RCC::CFGR::sws)) == 0b10; });   // initResult() reads it
         }
     };
 }}   // namespace Kvasir::Rcc

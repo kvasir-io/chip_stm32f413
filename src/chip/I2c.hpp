@@ -87,6 +87,15 @@ namespace Kvasir { namespace I2c {
 
         static inline std::uint32_t resets{};
 
+        // BUSY is "set by hardware on detection of SDA or SCL low", cleared only by a STOP, and
+        // "still updated when the interface is disabled (PE=0)" (RM0430 Rev 8 27.6.7): the pins
+        // switching to their alternate function latch it, with both lines idle high - psu302,
+        // 2026-10-06, every boot (SR2 0x0002 at the first transfer, PA8 and PC9 read 1), and the
+        // first transfer then waited 40 ms for it and failed "busy". A software reset clears it
+        // (CR1.SWRST, 27.6.1: "if the BUSY bit is set and remains locked due to a glitch on the
+        // bus, the SWRST bit can be used to exit from this state"), once, after the pin setup.
+        static void preEnableRuntimeInit() { softwareReset(); }
+
     private:
         static constexpr unsigned pollLimit
           = 200'000;   // several ms at 100 MHz: a byte at 50 kHz is 180 us
@@ -138,6 +147,14 @@ namespace Kvasir { namespace I2c {
             return waitFor(addr);
         }
 
+        // SWRST puts the I2C "under reset state" (27.6.1): the configuration is written again
+        // afterwards; PE is left to the caller (Startup's enable step, or recover()).
+        static void softwareReset() {
+            apply(write(Regs::CR1::swrst, Register::value<std::uint32_t, 1>()));
+            apply(write(Regs::CR1::swrst, Register::value<std::uint32_t, 0>()));
+            apply(initStepPeripheryConfig);
+        }
+
         // A transfer that timed out: STOP, and if the peripheral still holds the bus, a software
         // reset with the configuration written again (ES0372 2.11.3 workaround).
         static Result recover(Result r) {
@@ -146,9 +163,7 @@ namespace Kvasir { namespace I2c {
                 if(apply(read(Regs::SR2::busy)) == 0) { return r; }
             }
             ++resets;
-            apply(write(Regs::CR1::swrst, Register::value<std::uint32_t, 1>()));
-            apply(write(Regs::CR1::swrst, Register::value<std::uint32_t, 0>()));
-            apply(initStepPeripheryConfig);
+            softwareReset();
             apply(initStepPeripheryEnable);
             return r;
         }
