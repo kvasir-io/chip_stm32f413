@@ -1,4 +1,4 @@
-// src/chip/ClockMath.hpp: the numbers the psu302 board runs with, and the edges of every table.
+// src/chip/ClockMath.hpp: the numbers a board runs with, and the edges of every table.
 #include "ClockMath.hpp"
 
 #include <cstdio>

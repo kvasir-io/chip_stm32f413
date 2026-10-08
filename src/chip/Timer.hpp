@@ -177,7 +177,7 @@ namespace Kvasir { namespace Timer {
         // UG loads PSC (it is buffered: 18.4.11); URS keeps that UG from raising UIF - but only
         // once URS is written, and one list's writes go out highest address first: EGR (0x14)
         // before CR1 (0x00). UG in the list raised UIF, and the interrupt fired the moment Startup
-        // enabled the NVIC, before the other peripherals were enabled (psu302, 2026-10-06: the
+        // enabled the NVIC, before the other peripherals were enabled (seen: the
         // dither tick spun in Spi::waitIdle on a disabled SPI, main() never ran). Hence here, after
         // the configuration and before the NVIC enable.
         static void preEnableRuntimeInit() {

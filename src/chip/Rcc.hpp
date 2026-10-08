@@ -26,7 +26,7 @@
 //
 // init() runs in ClockSettings::coreClockInit(), before Startup sets up .data and .bss (so that
 // runs at full speed): it writes registers only. A variable it set would be wiped by the .bss
-// clear (psu302, 2026-10-06: "clock init notRun" with the PLL running). How far it got is read
+// clear (seen: "clock init notRun" with the PLL running). How far it got is read
 // back from RCC instead - every reset but a power-on one puts RCC_CR and RCC_CFGR back to their
 // reset values too (RM0430 Rev 8 6.1.2, "A system reset sets all registers to their reset values
 // except the reset flags in the clock controller CSR register and the registers in the Backup

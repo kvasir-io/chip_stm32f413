@@ -83,7 +83,7 @@ namespace Kvasir { namespace Exti {
 
         // SYSCFG for EXTICR, and EXTI's own APB clock: RCC_APB2ENR bit 15 EXITEN (RM0430 Rev 8
         // 6.3.16; missing from ST's SVD, added in chip.svd). Without it the EXTI registers take no
-        // write - IMR/RTSR read back 0 and no edge ever interrupts (psu302 fan tach, 2026-10-06).
+        // write - IMR/RTSR read back 0 and no edge ever interrupts.
         static constexpr auto powerClockEnable
           = list(write(Detail::RCC::APB2ENR::syscfgen, Register::value<std::uint32_t, 1>()),
                  write(Detail::RCC::APB2ENR::extiten, Register::value<std::uint32_t, 1>()));

@@ -41,6 +41,6 @@ learn here, dated, in the same turn.
   `Kvasir::Health::Supervisor` (`arm(FeedKey)`, `feed(FeedKey)`; `start()` and the plain `feed()` do not
   compile). An IWDG cannot be stopped (RM0430 22.4.1), so the supervisor has no `holdOff()` over it and the
   watchdog only runs once the supervisor's first `service()` started it. Ungated (`Watchdog<ms>`, psu302) is
-  unchanged: release images byte-identical. Checked by `tests/firmware/iwdg_gate.cpp`, compiled with psu302's
-  own compile command (`tests/firmware_check.py`, ctest `fw_iwdg_gate`; left out without a configured psu302
-  tree). Not run on a board.
+  unchanged: release images byte-identical. The firmware-tree check (`tests/firmware/iwdg_gate.cpp`,
+  `fw_iwdg_gate`) was removed 2026-10-07 (dominic: no firmware names in library repos); only a psu302 build checks
+  the gate now. Not run on a board.

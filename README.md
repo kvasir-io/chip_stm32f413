@@ -1,7 +1,7 @@
 # chip_stm32f413
 
 Kvasir chip package for the STMicroelectronics STM32F413RG (Cortex-M4F, 1 MiB flash, 320 KiB SRAM,
-LQFP64), made for the 302 PSU channel module (`../psu302`). Like every chip package this is a CMake
+LQFP64). Like every chip package this is a CMake
 include()-fragment: `cmake/chip.cmake` is pulled in by the Kvasir SDK through `CHIP_ROOT`, nothing
 builds here (`just` lists the upkeep recipes).
 
@@ -40,13 +40,12 @@ Every hardware fact in them cites RM0430 Rev 8, DS11581 Rev 7 or ES0372 Rev 8 (a
 | `Iwdg.hpp` | the independent watchdog, sized for the fastest LSI; frozen while the debugger halts the core |
 | `Flash.hpp` | sector erase and word programming of the main flash (x32) |
 
-## State (2026-10-02)
+## State
 
-- Built warning-free in all four variants through `psu302`'s examples (`examples/01_blink` ...
-  `08_watchdog`); host tests pass with gcc and clang. **Nothing has run on hardware yet** - the
-  psu302 examples are the bring-up order (psu302/README.md).
+- Built warning-free in all four variants through a firmware's examples (blink ...
+  watchdog); host tests pass with gcc and clang. **Nothing has run on hardware yet**.
 - Not written yet: DMA, TIM1/TIM8 (advanced timers), PWM channels 3-4, ADC channels 10-18 and
-  sequences, UART4/5/7-10, FMPI2C, CAN (bxCAN, the board's ISO1050 is on PB8/PB9), a queued
+  sequences, UART4/5/7-10, FMPI2C, CAN (bxCAN), a queued
   interrupt-driven I2C/SPI policy for kvasir_devices' engines, RTC, USB, the RNG as the stack
   canary's entropy (`StackGuardEntropy`), a compile-time AF table (the AF is passed as a number today).
 - `chip.svd` write semantics are marked only for the registers the drivers touch (FLASH_SR, EXTI_PR,
@@ -66,13 +65,13 @@ Each is an XML comment `<!-- Kvasir: ... -->` next to the change, with its RM043
   IWDG_STOP `iwdeg_stop` and lacks the TIM6/7/12/13/14 stop bits; the 32-bit timers' CNT/ARR/CCRx
   are split into `_h`/`_l` halves (the drivers write `FULLREGISTER`).
 
-## Depends on (uncommitted on 2026-10-02)
+## Depends on (uncommitted)
 
 - `Kvasir_SDK/svd_converter`: reading ST's SVDs (instance numbers from each peripheral's own name).
 - `core_cortex_m4`: `core_prio4.svd` and `CORE_NVIC_PRIO_BITS` in `cmake/core.cmake`. The submodule
   records a core commit without them: CI (tests.yml) checks out that commit and fails until the
   core change is committed and the submodule bumped.
-- `Kvasir_SDK/cmake/util.cmake`: `LINKER_FILE` in `kvasir_executable_variants` (psu302's own
+- `Kvasir_SDK/cmake/util.cmake`: `LINKER_FILE` in `kvasir_executable_variants` (a firmware's own
   linker script).
 
 The J-Link device is `STM32F413RG` (in `libjlinkarm.so`'s list). The UF2 family id 0x57755a57 is
