@@ -24737,7 +24737,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>11</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: a written 0 does nothing (plan 10): RM0430 Rev 8 §3.8.1 l.3644-3650 "0: Instruction cache is not reset" (l.3646), access `w` (table l.3629-3630) -->
+              <!-- Kvasir: a written 0 does nothing: RM0430 Rev 8 §3.8.1 l.3644-3650 "0: Instruction cache is not reset" (l.3646), access `w` (table l.3629-3630) -->
               <modifiedWriteValues>oneToSet</modifiedWriteValues>
             </field>
             <field>
@@ -37866,7 +37866,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
             </field>
             <field>
               <!-- Kvasir: RM0430 Rev 8 6.3.16 RCC_APB2ENR bit 15 "EXITEN: Extit Apb sysctrl pfree clock enable" - missing
-              in ST's SVD (only APB2LPENR has it); without it every EXTI register write is lost (psu302 fan tach, 2026-10-06) -->
+              in ST's SVD (only APB2LPENR has it); without it every EXTI register write is lost -->
               <name>EXTITEN</name>
               <description>EXTIT APB and SYSCTRL PFREE clock enable</description>
               <bitOffset>15</bitOffset>
@@ -42203,7 +42203,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>26</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>SNAK</name>
@@ -42211,7 +42211,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>27</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>EPDIS</name>
@@ -42258,7 +42258,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>29</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>SD0PID_SEVNFRM</name>
@@ -42266,7 +42266,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>28</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>SNAK</name>
@@ -42274,7 +42274,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>27</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>CNAK</name>
@@ -42282,7 +42282,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>26</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>TXFNUM</name>
@@ -42364,7 +42364,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>29</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>SD0PID_SEVNFRM</name>
@@ -42372,7 +42372,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>28</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>SNAK</name>
@@ -42380,7 +42380,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>27</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>CNAK</name>
@@ -42388,7 +42388,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>26</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>TXFNUM</name>
@@ -42470,7 +42470,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>29</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>SD0PID_SEVNFRM</name>
@@ -42478,7 +42478,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>28</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>SNAK</name>
@@ -42486,7 +42486,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>27</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>CNAK</name>
@@ -42494,7 +42494,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>26</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>TXFNUM</name>
@@ -42562,7 +42562,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>31</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>EPDIS</name>
@@ -42577,7 +42577,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>27</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>CNAK</name>
@@ -42585,7 +42585,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>26</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>Stall</name>
@@ -42660,7 +42660,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>29</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>SD0PID_SEVNFRM</name>
@@ -42668,7 +42668,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>28</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>SNAK</name>
@@ -42676,7 +42676,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>27</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>CNAK</name>
@@ -42684,7 +42684,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>26</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>Stall</name>
@@ -42766,7 +42766,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>29</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>SD0PID_SEVNFRM</name>
@@ -42774,7 +42774,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>28</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>SNAK</name>
@@ -42782,7 +42782,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>27</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>CNAK</name>
@@ -42790,7 +42790,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>26</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>Stall</name>
@@ -42872,7 +42872,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>29</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>SD0PID_SEVNFRM</name>
@@ -42880,7 +42880,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>28</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>SNAK</name>
@@ -42888,7 +42888,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>27</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>CNAK</name>
@@ -42896,7 +42896,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               <bitOffset>26</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
-              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page 2026-10-04), so it stays as it is: written back as read. Classify with the STM32 USB work (plan 10) -->
+              <!-- Kvasir: write-only accepted: RM0430 Rev 8 says only "a write to this bit sets/clears ...", not what a written 0 does (read on the PDF page), so it stays as it is: written back as read -->
             </field>
             <field>
               <name>Stall</name>
@@ -46121,7 +46121,7 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
               select</description>
               <bitOffset>6</bitOffset>
               <bitWidth>1</bitWidth>
-              <!-- Kvasir: RM0430 Rev 8 33.15.4 (md l.50433-50434): "always 1 with read-only access" (plan 10) -->
+              <!-- Kvasir: RM0430 Rev 8 33.15.4 (md l.50433-50434): "always 1 with read-only access" -->
               <access>read-only</access>
             </field>
             <field>
