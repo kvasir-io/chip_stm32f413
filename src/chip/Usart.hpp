@@ -157,18 +157,21 @@ namespace Kvasir { namespace Usart {
         }
 
         static void onIsr() {
-            auto const sr = get<0>(apply(read(Regs::SR::FULLREGISTER)));
-            // SR bits (28.6.1): ORE 3, RXNE 5, TXE 7.
-            if((sr & (1U << 5)) != 0 || (sr & (1U << 3)) != 0) {
+            // One SR load (28.6.1), then the DR read: that pair clears ORE.
+            auto const sr   = apply(read(Regs::SR::rxne, Regs::SR::ore, Regs::SR::txe));
+            bool const rxne = get<0>(sr) != 0;
+            bool const ore  = get<1>(sr) != 0;
+            bool const txe  = get<2>(sr) != 0;
+            if(rxne || ore) {
                 auto const b = static_cast<std::byte>(apply(read(Regs::DR::dr)) & 0xFFU);
-                if((sr & (1U << 3)) != 0) { ++overruns; }   // SR read, then DR read: cleared
+                if(ore) { ++overruns; }   // SR read, then DR read: cleared
                 if(rxQueue.size() < RxSize) {
                     rxQueue.push(b);
                 } else {
                     ++rxDropped;
                 }
             }
-            if((sr & (1U << 7)) != 0 && apply(read(Regs::CR1::txeie)) != 0) {
+            if(txe && apply(read(Regs::CR1::txeie)) != 0) {
                 std::byte b{};
                 if(txQueue.pop_into(b)) {
                     apply(write(Regs::DR::dr, static_cast<std::uint32_t>(b)));

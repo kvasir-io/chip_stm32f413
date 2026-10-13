@@ -51,22 +51,21 @@ namespace Kvasir { namespace Flash {
     namespace Detail {
         using FLASH = Kvasir::Peripheral::FLASH::Registers<>;
 
-        // SR bits (3.8.4): EOP 0, OPERR 1, WRPERR 4, PGAERR 5, PGPERR 6, PGSERR 7, BSY 16.
-        inline constexpr std::uint32_t errors
-          = (1U << 1) | (1U << 4) | (1U << 5) | (1U << 6) | (1U << 7);
-
-        inline std::uint32_t sr() { return get<0>(apply(read(FLASH::SR::FULLREGISTER))); }
+        // SR (3.8.4): EOP and the error flags are rc_w1 (chip.svd: oneToClear), BSY read-only.
+        inline constexpr std::uint32_t errors = FLASH::SR::operr.Mask | FLASH::SR::wrperr.Mask
+                                              | FLASH::SR::pgaerr.Mask | FLASH::SR::pgperr.Mask
+                                              | FLASH::SR::pgserr.Mask;
 
         inline void waitIdle() {
             Kvasir::Register::waitUntil<Kvasir::Chip::FlashBusyBound>(
-              [] { return !((sr() & (1U << 16)) != 0); });
+              Kvasir::Register::isClear(FLASH::SR::bsy));
         }
 
         inline Result check() {
-            auto const s = sr();
-            // EOP and the errors are rc_w1: one whole-register write of them clears them.
-            apply(write(FLASH::SR::FULLREGISTER, (s & (errors | 1U))));
-            if((s & (1U << 4)) != 0) { return Result::writeProtected; }
+            // A snapshot of the flags, written back whole: clears exactly the rc_w1 flags it saw set.
+            auto const s = Register::readWhole(FLASH::SR::FULLREGISTER);
+            Register::writeWhole(FLASH::SR::FULLREGISTER, s & (errors | FLASH::SR::eop.Mask));
+            if(Register::extract(FLASH::SR::wrperr, s) != 0) { return Result::writeProtected; }
             if((s & errors) != 0) { return Result::programmingError; }
             return Result::ok;
         }

@@ -100,30 +100,23 @@ namespace Kvasir { namespace I2c {
         static constexpr unsigned pollLimit
           = 200'000;   // several ms at 100 MHz: a byte at 50 kHz is 180 us
 
-        [[nodiscard]] static std::uint32_t sr1() {
-            return get<0>(apply(read(Regs::SR1::FULLREGISTER)));
-        }
-
-        // SR1 bits (27.6.6): SB 0, ADDR 1, BTF 2, RxNE 6, TxE 7, BERR 8, ARLO 9, AF 10.
-        static constexpr std::uint32_t sb = 1U << 0, addr = 1U << 1, btf = 1U << 2, rxne = 1U << 6,
-                                       txe = 1U << 7, berr = 1U << 8, arlo = 1U << 9, af = 1U << 10;
-
         static void stop() { apply(write(Regs::CR1::stop, Register::value<std::uint32_t, 1>())); }
 
-        // Wait for any of `want` in SR1; nack/arbitration loss end it early. BERR is cleared and
-        // ignored (ES0372 2.11.1). SR1 flags are rc_w0: writing 0 to one leaves the others.
+        // Wait for the SR1 flag(s) `want` (27.6.6; a field's `.Mask`); nack/arbitration loss end it
+        // early. BERR is cleared and ignored (ES0372 2.11.1). SR1 flags are rc_w0: writing 0 to one
+        // leaves the others. One SR1 load a poll; one function for every flag.
         static Result waitFor(std::uint32_t want) {
             for(unsigned i = 0; i < pollLimit; ++i) {
-                auto const s = sr1();
-                if((s & berr) != 0) {
+                auto const s = Register::readWhole(Regs::SR1::FULLREGISTER);
+                if(Register::extract(Regs::SR1::berr, s) != 0) {
                     apply(write(Regs::SR1::berr, Register::value<std::uint32_t, 0>()));
                 }
-                if((s & af) != 0) {
+                if(Register::extract(Regs::SR1::af, s) != 0) {
                     apply(write(Regs::SR1::af, Register::value<std::uint32_t, 0>()));
                     stop();
                     return Result::nack;
                 }
-                if((s & arlo) != 0) {
+                if(Register::extract(Regs::SR1::arlo, s) != 0) {
                     apply(write(Regs::SR1::arlo, Register::value<std::uint32_t, 0>()));
                     return Result::arbitrationLost;
                 }
@@ -132,19 +125,20 @@ namespace Kvasir { namespace I2c {
             return Result::timeout;
         }
 
-        // ADDR is cleared by reading SR1 and then SR2 (27.6.6).
+        // ADDR is cleared by reading SR1 and then SR2 (27.6.6): the whole registers, read for
+        // their side effect, in this order.
         static void clearAddr() {
-            static_cast<void>(sr1());
-            static_cast<void>(get<0>(apply(read(Regs::SR2::FULLREGISTER))));
+            static_cast<void>(Register::readWhole(Regs::SR1::FULLREGISTER));
+            static_cast<void>(Register::readWhole(Regs::SR2::FULLREGISTER));
         }
 
         static Result start(std::uint8_t address7,
                             bool         readDirection) {
             apply(write(Regs::CR1::start, Register::value<std::uint32_t, 1>()));
-            if(auto r = waitFor(sb); r != Result::ok) { return r; }
+            if(auto r = waitFor(Regs::SR1::sb.Mask); r != Result::ok) { return r; }
             apply(write(Regs::DR::dr,
                         (static_cast<std::uint32_t>(address7) << 1U) | (readDirection ? 1U : 0U)));
-            return waitFor(addr);
+            return waitFor(Regs::SR1::addr.Mask);
         }
 
         // SWRST puts the I2C "under reset state" (27.6.1): the configuration is written again
@@ -187,10 +181,10 @@ namespace Kvasir { namespace I2c {
             clearAddr();
             apply(write(Regs::DR::dr, static_cast<std::uint32_t>(reg)));
             for(auto b : bytes) {
-                if(auto r = waitFor(txe); r != Result::ok) { return finish(r); }
+                if(auto r = waitFor(Regs::SR1::txe.Mask); r != Result::ok) { return finish(r); }
                 apply(write(Regs::DR::dr, static_cast<std::uint32_t>(b)));
             }
-            if(auto r = waitFor(btf); r != Result::ok) { return finish(r); }
+            if(auto r = waitFor(Regs::SR1::btf.Mask); r != Result::ok) { return finish(r); }
             stop();
             return Result::ok;
         }
@@ -206,19 +200,19 @@ namespace Kvasir { namespace I2c {
             if(auto r = start(address7, false); r != Result::ok) { return finish(r); }
             clearAddr();
             apply(write(Regs::DR::dr, static_cast<std::uint32_t>(reg)));
-            if(auto r = waitFor(btf); r != Result::ok) { return finish(r); }
+            if(auto r = waitFor(Regs::SR1::btf.Mask); r != Result::ok) { return finish(r); }
             if(auto r = start(address7, true); r != Result::ok) { return finish(r); }
             if(out.size() == 1) {
                 apply(write(Regs::CR1::ack, Register::value<std::uint32_t, 0>()));
                 clearAddr();
                 stop();
-                if(auto r = waitFor(rxne); r != Result::ok) { return finish(r); }
+                if(auto r = waitFor(Regs::SR1::rxne.Mask); r != Result::ok) { return finish(r); }
                 out[0] = static_cast<std::byte>(apply(read(Regs::DR::dr)) & 0xFFU);
             } else {
                 apply(write(Regs::CR1::pos, Register::value<std::uint32_t, 1>()));
                 apply(write(Regs::CR1::ack, Register::value<std::uint32_t, 0>()));
                 clearAddr();
-                if(auto r = waitFor(btf); r != Result::ok) { return finish(r); }
+                if(auto r = waitFor(Regs::SR1::btf.Mask); r != Result::ok) { return finish(r); }
                 stop();
                 out[0] = static_cast<std::byte>(apply(read(Regs::DR::dr)) & 0xFFU);
                 out[1] = static_cast<std::byte>(apply(read(Regs::DR::dr)) & 0xFFU);
