@@ -6,8 +6,8 @@
 namespace {
 using namespace Kvasir;
 
-// The board: 8 MHz crystal to 100 MHz - the PLL its CubeMX project used (M 4, N 100, P 2), VCO
-// input 2 MHz as RM0430 6.3.2 recommends, Q 5 keeps the 48 MHz domain at 40 MHz.
+// An 8 MHz crystal to 100 MHz: M 4, N 100, P 2, the VCO input at 2 MHz as RM0430 6.3.2
+// recommends; Q 5 keeps the 48 MHz domain at 40 MHz.
 constexpr auto board = Rcc::solvePll(8'000'000, 100'000'000);
 static_assert(board && board->m == 4 && board->n == 100 && board->p == 2 && board->q == 5);
 static_assert(board->vcoHz == 200'000'000);
@@ -58,11 +58,11 @@ static_assert(Rcc::timerClock(100'000'000,
                               4)
               == 50'000'000);
 
-// Timers: the DAC tick at 50 kHz exactly (PSC 0, ARR 1999), the fan at 25 kHz (ARR 3999)
+// Timers: 50 kHz exactly (PSC 0, ARR 1999), 25 kHz (ARR 3999)
 constexpr auto tick = Timer::divisionFor(100'000'000, 50'000, 16);
 static_assert(tick.psc == 0 && tick.arr == 1999);
-constexpr auto fan = Timer::divisionFor(100'000'000, 25'000, 16);
-static_assert(fan.psc == 0 && fan.arr == 3999);
+constexpr auto pwm = Timer::divisionFor(100'000'000, 25'000, 16);
+static_assert(pwm.psc == 0 && pwm.arr == 3999);
 // 1 Hz on a 16-bit timer needs a prescaler: the smallest that fits
 constexpr auto slow = Timer::divisionFor(100'000'000, 1, 16);
 // (100 MHz / 1526 = 65530.8 counts a second, rounded to 65531)
@@ -83,16 +83,43 @@ static_assert(Spi::baudBits(100'000'000,
 static_assert(Adc::Detail::prescalerBits(100'000'000) == 1);
 static_assert(Adc::Detail::prescalerBits(50'000'000) == 0);
 
-// Watchdog: a setting whose shortest timeout (LSI 47 kHz) is at least the one asked
+// A rate inside its tolerance passes (one outside is a compile error with Prescaler's message): 115 200 baud from
+// 50 MHz, BRR 434 = 115 207 Hz, +64 ppm against 1 %
+static_assert(Chip::checkedInTolerance<Prescaler::Rational{50'000'000,
+                                                           434},
+                                       115'200,
+                                       Prescaler::Tolerance{std::ratio<1,
+                                                                       100>{}},
+                                       "baud">);
+
+// Watchdog: the timeout formula pinned at its ends, (RLR + 1) x (4 << PR) / LSI ...
+static_assert(Iwdg::periodUs(Iwdg::Setting{0,
+                                           0},
+                             Iwdg::lsiMaxHz)
+              == 85);   // 4 / 47 kHz
+static_assert(Iwdg::periodUs(Iwdg::Setting{6,
+                                           4095},
+                             Iwdg::lsiMaxHz)
+              == 22'310'127);
+static_assert(Iwdg::periodUs(Iwdg::Setting{6,
+                                           4095},
+                             Iwdg::lsiMinHz)
+              == 65'128'944);
+// ... and a setting whose shortest timeout (LSI 47 kHz) is at least the one asked
 constexpr auto w500 = Iwdg::settingFor(500'000);
-static_assert(std::uint64_t{4U << w500.pr} * (w500.rlr + 1) * 1'000'000 / Iwdg::lsiMaxHz
+static_assert(Iwdg::periodUs(w500,
+                             Iwdg::lsiMaxHz)
               >= 500'000);
 constexpr auto w3s = Iwdg::settingFor(3'000'000);
-static_assert(std::uint64_t{4U << w3s.pr} * (w3s.rlr + 1) * 1'000'000 / Iwdg::lsiMaxHz
+static_assert(Iwdg::periodUs(w3s,
+                             Iwdg::lsiMaxHz)
               >= 3'000'000);
 }   // namespace
 
 int main() {
+    if(!board) {   // static_asserted above; the check sees main only
+        return 1;
+    }
     std::printf(
       "PLL M %u N %u P %u Q %u; tick PSC %u ARR %u; slow PSC %u ARR %u; IWDG 500 ms PR %u RLR %u, "
       "3 s PR %u RLR %u\n",

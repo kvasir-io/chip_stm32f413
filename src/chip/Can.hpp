@@ -1,11 +1,20 @@
 #pragma once
 
+#include "ClockMath.hpp"
+#include "Clocks.hpp"
+#include "Instances.hpp"
 #include "Io.hpp"
+#include "Rcc.hpp"
+#include "WaitBounds.hpp"
+#include "kvasir/Hal/Owns.hpp"
+#include "kvasir/Port/Extends.hpp"
 #include "kvasir/Register/Register.hpp"
+#include "kvasir/Util/Backoff.hpp"
 #include "peripherals/CAN.hpp"
 #include "peripherals/RCC.hpp"
 
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -15,13 +24,16 @@
 // compile time from PCLK1 (32.7.7: bit = (1 + TS1 + TS2) tq, tq = (BRP + 1) / PCLK1, TS1 1-16,
 // TS2 1-8 quanta), exact, with the sample point nearest the wanted one.
 //
-//     using Can = Kvasir::Can::Bus<HW::ClockTree, 1, 500'000, RxPin, TxPin, 8>;
+//     using Can = Kvasir::Can::Bus<HW::ClockTree, 1, 500'000, RxPin, TxPin, 8, Clock>;
 //     Can::send(frame);                          // Result::ok, or ::full (no mailbox free)
 //     while(auto f = Can::receive()) { ... }
 //
 // Bus-off is left by the hardware (MCR.ABOM, 32.7.6): no error needs a person or a reset. Startup
 // requests normal mode and does not wait for it - it is reached after 11 recessive bits (32.4.2),
-// which a board without a bus never sees; until then frames wait in their mailboxes.
+// which a board without a bus never sees; until then frames wait in their mailboxes. An
+// initialization that did not get its INAK (initFailed) is retried by turn(), the bus's Hook::MainLoop
+// entry, on a doubling pause (Kvasir::Backoff on TimeClock: 1 s up to 10 min) until it succeeds - a
+// firmware that lists the bus and runs `Startup::run<Kvasir::Hook::MainLoop>()` has it.
 namespace Kvasir { namespace Can {
     struct Frame {
         std::uint32_t            id{};   // 11 bits, or 29 with extended
@@ -33,111 +45,69 @@ namespace Kvasir { namespace Can {
 
     enum class Result : std::uint8_t { ok, full, badFrame };
 
-    struct BitTiming {
-        unsigned brp;   // the divider, BRP + 1
-        unsigned ts1;   // quanta, TS1 + 1
-        unsigned ts2;   // quanta, TS2 + 1
-        unsigned samplePermille;
-    };
-
-    // Every exact divider and split, the sample point closest to the wanted one; brp 0 = none.
-    constexpr BitTiming solveBitTiming(std::uint32_t pclkHz,
-                                       std::uint32_t bitrate,
-                                       unsigned      wantPermille) {
-        BitTiming best{0, 0, 0, 0};
-        unsigned  bestDiff = ~0U;
-        for(unsigned brp = 1; brp <= 1024; ++brp) {
-            if(pclkHz % brp != 0 || (pclkHz / brp) % bitrate != 0) { continue; }
-            unsigned const quanta = pclkHz / brp / bitrate;
-            for(unsigned ts2 = 1; ts2 <= 8; ++ts2) {
-                if(quanta < 1 + 1 + ts2) { break; }
-                unsigned const ts1 = quanta - 1 - ts2;
-                if(ts1 > 16) { continue; }
-                unsigned const sample = (1 + ts1) * 1000 / quanta;
-                unsigned const diff
-                  = sample > wantPermille ? sample - wantPermille : wantPermille - sample;
-                if(diff < bestDiff) {
-                    bestDiff = diff;
-                    best     = BitTiming{brp, ts1, ts2, sample};
-                }
-            }
-        }
-        return best;
-    }
-
-    namespace Detail { using RCC = Kvasir::Peripheral::RCC::Registers<>; }
+    // The bit timing solver (BitTiming, solveBitTiming): ClockMath.hpp, register-free and host-tested.
 
     template<unsigned N>
     struct Instance;
 
-    // CAN1 on APB1 (RM0430 Table 1, 6.3.15 APB1ENR.CAN1EN). CAN2 shares CAN1's filters and needs
-    // its clock (32.3.3): not supported here.
+    // CAN1 on APB1 (RM0430 Table 1, Instances.hpp; 6.3.15 APB1ENR.CAN1EN). CAN2 shares CAN1's filters
+    // and needs its clock (32.3.3): not supported here.
     template<>
-    struct Instance<1> {
-        static constexpr auto enable() {
-            return write(Detail::RCC::APB1ENR::can1en, Register::value<std::uint32_t, 1>());
-        }
-    };
+    struct Instance<1> : Rcc::OnBusOf<Peripheral::CAN::Registers<1>> {};
 
     template<typename Clocks,
              unsigned      N,
              std::uint32_t Bitrate,
              typename RxPin,
              typename TxPin,
-             int      Af,
+             int Af,
+             typename TimeClock,   // Clock::now() for the init retry's pauses (turn())
              unsigned SamplePermille = 875>
     struct Bus {
         using I    = Instance<N>;
         using Regs = Kvasir::Peripheral::CAN::Registers<N>;
 
-        static constexpr BitTiming timing
-          = solveBitTiming(Clocks::pclk1Hz, Bitrate, SamplePermille);
+        static constexpr std::uint32_t pclkHz = Clocks::template pclkHz<I::bus>;
+
+        // Startup: this block, and the bus clock its dividers are computed from (Clocks.hpp).
+        using Provides = brigand::list<Hal::Owns<Regs>>;
+        using Claims   = Hal::Claim<Kvasir::Clocks::ClkApb<I::bus>, pclkHz>;
+
+        static constexpr BitTiming timing = solveBitTiming(pclkHz, Bitrate, SamplePermille);
         static_assert(timing.brp != 0,
                       "no exact CAN bit timing for this bit rate from PCLK1 (RM0430 32.7.7)");
         static_assert(timing.samplePermille >= 750 && timing.samplePermille <= 900,
                       "CAN sample point outside 75-90 %");
-        static constexpr auto powerClockEnable = list(I::enable());
-        static constexpr auto initStepPinConfig
-          = list(action(Io::Action::PinFunction<Af,
-                                                Io::OutputType::PushPull,
-                                                Io::OutputSpeed::High,
-                                                Io::OutputInit::High,
-                                                Io::PullConfiguration::PullUp>{},
-                        TxPin{}),
-                 action(Io::Action::PinFunction<Af,
-                                                Io::OutputType::PushPull,
-                                                Io::OutputSpeed::Low,
-                                                Io::OutputInit::Low,
-                                                Io::PullConfiguration::PullUp>{},
-                        RxPin{}));
+        static constexpr auto powerClockEnable  = I::powerClockEnable;
+        static constexpr auto initStepPinConfig = Io::txRxPins<Af, TxPin, RxPin>();
 
         static inline std::uint32_t rxOverruns{};
-        static inline bool          initFailed{};   // INAK never came: the CAN clock is not running
+        // INAK did not come: "the CAN hardware waits until the current CAN activity (transmission or
+        // reception) is completed before entering the initialization mode" (32.9.2 CAN_MCR, INRQ):
+        // a CANRX that never goes idle, for one - or the CAN has no clock.
+        // turn() tries again; `reinits` counts the initializations it got through.
+        static inline bool          initFailed{};
+        static inline std::uint32_t reinits{};
 
     private:
-        static constexpr unsigned pollLimit = 200'000;   // several ms at 100 MHz
+        // The data bytes as the two mailbox words: DATA0 is bits 7:0 of TDLxR/RDLxR, DATA4 of TDHxR/RDHxR (32.9.3,
+        // md l.48203, l.48243), and the core stores a word's lowest byte first (little endian, 2.2.1, md l.2645) -
+        // so the words are the bytes in memory order.
+        using DataWords = std::array<std::uint32_t, 2>;
 
-        template<typename F>
-        static bool waitFor(F f) {
-            for(unsigned i = 0; i < pollLimit; ++i) {
-                if(f()) { return true; }
-            }
-            return false;
-        }
-
-        static std::uint32_t lowWord(Frame const& f) {
-            return std::to_integer<std::uint32_t>(f.data[0])
-                 | (std::to_integer<std::uint32_t>(f.data[1]) << 8)
-                 | (std::to_integer<std::uint32_t>(f.data[2]) << 16)
-                 | (std::to_integer<std::uint32_t>(f.data[3]) << 24);
-        }
-
-        static std::uint32_t highWord(Frame const& f) {
-            return std::to_integer<std::uint32_t>(f.data[4])
-                 | (std::to_integer<std::uint32_t>(f.data[5]) << 8)
-                 | (std::to_integer<std::uint32_t>(f.data[6]) << 16)
-                 | (std::to_integer<std::uint32_t>(f.data[7]) << 24);
-        }
+        // TIxR, TDTxR, TDLxR, TDHxR of each transmit mailbox (32.9.3).
+        using TxMailboxes = brigand::list<brigand::list<typename Regs::TI0R,
+                                                        typename Regs::TDT0R,
+                                                        typename Regs::TDL0R,
+                                                        typename Regs::TDH0R>,
+                                          brigand::list<typename Regs::TI1R,
+                                                        typename Regs::TDT1R,
+                                                        typename Regs::TDL1R,
+                                                        typename Regs::TDH1R>,
+                                          brigand::list<typename Regs::TI2R,
+                                                        typename Regs::TDT2R,
+                                                        typename Regs::TDL2R,
+                                                        typename Regs::TDH2R>>;
 
         // CAN_TIxR's fields (32.9.3). An extended id is split into STID (its upper 11 bits,
         // EXID[28:18]) and EXID (its lower 18).
@@ -165,22 +135,25 @@ namespace Kvasir { namespace Can {
                   write(TI::txrq, txrq));
         }
 
-        // TIxR, TDTxR, TDLxR, TDHxR of one mailbox (32.9.3), TXRQ last ("set up the identifier,
-        // the data length code (DLC) and the data before requesting the transmission by setting
-        // the corresponding TXRQ bit", 32.7.1): separate applies, so the stores keep this order.
-        template<typename TI,
-                 typename TDT,
-                 typename TDL,
-                 typename TDH>
+        // Transmit mailbox K, TXRQ last ("set up the identifier, the data length code (DLC) and the
+        // data before requesting the transmission by setting the corresponding TXRQ bit", 32.7.1):
+        // separate applies, so the stores keep this order.
+        template<unsigned K>
         static void load(Frame const& f) {
+            using M     = brigand::at_c<TxMailboxes, K>;
+            using TI    = brigand::at_c<M, 0>;
+            using TDT   = brigand::at_c<M, 1>;
+            using TDL   = brigand::at_c<M, 2>;
+            using TDH   = brigand::at_c<M, 3>;
             Id const id = idOf(f);
             writeId<TI>(id, Register::value<std::uint32_t, 0>());
             // TGT and TIME as 0, as at reset: the write covers the register, one store
             apply(write(TDT::time, Register::value<std::uint32_t, 0>()),
-                  write(TDT::tgt, Register::value<std::uint32_t, 0>()),
+                  clear(TDT::tgt),
                   write(TDT::dlc, std::uint32_t{f.dlc}));
-            Register::writeWhole(TDL::FULLREGISTER, lowWord(f));
-            Register::writeWhole(TDH::FULLREGISTER, highWord(f));
+            auto const words = std::bit_cast<DataWords>(f.data);
+            Register::writeWhole(TDL::FULLREGISTER, words[0]);
+            Register::writeWhole(TDH::FULLREGISTER, words[1]);
             writeId<TI>(id, Register::value<std::uint32_t, 1>());
         }
 
@@ -191,39 +164,69 @@ namespace Kvasir { namespace Can {
             // Leaves Sleep (reset state) for initialization: SLEEP 0, INRQ 1 (32.4.3). ABOM: bus-off
             // left by the hardware; TXFP: mailboxes go out in request order; DBF as at reset (the
             // CAN stops while the core is halted).
-            apply(Regs::MCR::overrideDefaults(
-              write(Regs::MCR::dbf, Register::value<std::uint32_t, 1>()),
-              write(Regs::MCR::abom, Register::value<std::uint32_t, 1>()),
-              write(Regs::MCR::txfp, Register::value<std::uint32_t, 1>()),
-              write(Regs::MCR::sleep, Register::value<std::uint32_t, 0>()),
-              write(Regs::MCR::inrq, Register::value<std::uint32_t, 1>())));
-            if(!waitFor([] { return apply(read(Regs::MSR::inak)) != 0; })) {
+            apply(Regs::MCR::overrideDefaults(set(Regs::MCR::dbf),
+                                              set(Regs::MCR::abom),
+                                              set(Regs::MCR::txfp),
+                                              clear(Regs::MCR::sleep),
+                                              set(Regs::MCR::inrq)));
+            // bounded (WaitBounds.hpp), Report whatever policy the application injects
+            if(!Register::waitUntil<Kvasir::Chip::CanInitBound<Bitrate>,
+                                    Register::OnTimeout::Report>(Register::isSet(Regs::MSR::inak)))
+            {
                 initFailed = true;
                 return;
             }
+            initFailed = false;
             // BTR (32.9.2): BRP - 1, TS1 - 1, TS2 - 1, SJW 1 tq (0); loop back and silent off.
             apply(write(Regs::BTR::brp, Register::value<std::uint32_t, timing.brp - 1>()),
                   write(Regs::BTR::ts1, Register::value<std::uint32_t, timing.ts1 - 1>()),
                   write(Regs::BTR::ts2, Register::value<std::uint32_t, timing.ts2 - 1>()),
                   write(Regs::BTR::sjw, Register::value<std::uint32_t, 0>()),
-                  write(Regs::BTR::lbkm, Register::value<std::uint32_t, 0>()),
-                  write(Regs::BTR::silm, Register::value<std::uint32_t, 0>()));
+                  clear(Regs::BTR::lbkm),
+                  clear(Regs::BTR::silm));
 
             // FMR.FINIT (its reset value, CAN2SB 14, kept), bank 0 off, 32-bit mask mode, FIFO 0,
             // id and mask 0, on (32.9.4).
-            apply(write(Regs::FMR::finit, Register::value<std::uint32_t, 1>()));
-            apply(write(Regs::FA1R::fact0, Register::value<std::uint32_t, 0>()));
-            apply(write(Regs::FM1R::fbm0, Register::value<std::uint32_t, 0>()),
-                  write(Regs::FS1R::fsc0, Register::value<std::uint32_t, 1>()),
-                  write(Regs::FFA1R::ffa0, Register::value<std::uint32_t, 0>()),
+            apply(set(Regs::FMR::finit));
+            apply(clear(Regs::FA1R::fact0));
+            apply(clear(Regs::FM1R::fbm0),
+                  set(Regs::FS1R::fsc0),
+                  clear(Regs::FFA1R::ffa0),
                   write(Regs::F0R1::FULLREGISTER, Register::value<std::uint32_t, 0>()),
                   write(Regs::F0R2::FULLREGISTER, Register::value<std::uint32_t, 0>()));
-            apply(write(Regs::FA1R::fact0, Register::value<std::uint32_t, 1>()));
-            apply(write(Regs::FMR::finit, Register::value<std::uint32_t, 0>()));
+            apply(set(Regs::FA1R::fact0));
+            apply(clear(Regs::FMR::finit));
 
-            apply(write(Regs::MCR::inrq, Register::value<std::uint32_t, 0>()));
+            apply(clear(Regs::MCR::inrq));
         }
 
+        /// The Hook::MainLoop entry: while the initialization has failed, runtimeInit() again once the
+        /// pause is over (the first retry 1 s after the failure is seen, doubling up to 10 min); nothing
+        /// once it succeeded.
+        static void turn() {
+            if(!initFailed) { return; }
+            auto const now = TimeClock::now();
+            // the failure of Startup's runtimeInit(), seen for the first time: the first pause starts
+            if(retry_.failures == 0) {
+                retry_.failed(now);
+                return;
+            }
+            if(!retry_.due(now)) { return; }
+            runtimeInit();
+            if(initFailed) {
+                retry_.failed(now);
+            } else {
+                retry_.succeeded();
+                ++reinits;
+            }
+        }
+
+        using Extends = Startup::Extend<Kvasir::Hook::MainLoop, &Bus::turn>;
+
+    private:
+        static inline Kvasir::Backoff<TimeClock> retry_{};
+
+    public:
         /// Into the next free transmit mailbox (TSR.CODE, 32.9.2), or full.
         static Result send(Frame const& f) {
             if(f.dlc > 8) { return Result::badFrame; }
@@ -232,24 +235,9 @@ namespace Kvasir { namespace Can {
               = apply(read(Regs::TSR::tme0, Regs::TSR::tme1, Regs::TSR::tme2, Regs::TSR::code));
             if(get<0>(tsr) == 0 && get<1>(tsr) == 0 && get<2>(tsr) == 0) { return Result::full; }
             switch(get<3>(tsr)) {
-            case 0:
-                load<typename Regs::TI0R,
-                     typename Regs::TDT0R,
-                     typename Regs::TDL0R,
-                     typename Regs::TDH0R>(f);
-                break;
-            case 1:
-                load<typename Regs::TI1R,
-                     typename Regs::TDT1R,
-                     typename Regs::TDL1R,
-                     typename Regs::TDH1R>(f);
-                break;
-            default:
-                load<typename Regs::TI2R,
-                     typename Regs::TDT2R,
-                     typename Regs::TDL2R,
-                     typename Regs::TDH2R>(f);
-                break;
+            case 0:  load<0>(f); break;
+            case 1:  load<1>(f); break;
+            default: load<2>(f); break;
             }
             return Result::ok;
         }
@@ -259,8 +247,7 @@ namespace Kvasir { namespace Can {
             auto const rf0r = apply(read(Regs::RF0R::fovr0, Regs::RF0R::fmp0));   // one load
             if(get<0>(rf0r) != 0) {   // FOVR0, rc_w1: the whole register written, FOVR0 alone
                 ++rxOverruns;
-                apply(Regs::RF0R::overrideDefaults(
-                  write(Regs::RF0R::fovr0, Register::value<std::uint32_t, 1>())));
+                apply(Regs::RF0R::overrideDefaults(set(Regs::RF0R::fovr0)));
             }
             if(get<1>(rf0r) == 0) { return std::nullopt; }   // FMP0
             // The mailbox, one load per register, all before the release below.
@@ -270,18 +257,14 @@ namespace Kvasir { namespace Can {
             auto const lo  = Register::readWhole(Regs::RDL0R::FULLREGISTER);
             auto const hi  = Register::readWhole(Regs::RDH0R::FULLREGISTER);
             // RFOM0 is "rs": the whole register written with it alone, so FULL0/FOVR0 (rc_w1) get 0.
-            apply(Regs::RF0R::overrideDefaults(
-              write(Regs::RF0R::rfom0, Register::value<std::uint32_t, 1>())));
+            apply(Regs::RF0R::overrideDefaults(set(Regs::RF0R::rfom0)));
 
             Frame f{};
             f.extended = get<2>(ri) != 0;
             f.remote   = get<3>(ri) != 0;
             f.id       = f.extended ? (get<0>(ri) << 18) | get<1>(ri) : get<0>(ri);
             f.dlc      = static_cast<std::uint8_t>(dlc);
-            for(unsigned b = 0; b < 4; ++b) {
-                f.data[b]     = static_cast<std::byte>((lo >> (8 * b)) & 0xFFU);
-                f.data[b + 4] = static_cast<std::byte>((hi >> (8 * b)) & 0xFFU);
-            }
+            f.data     = std::bit_cast<std::array<std::byte, 8>>(DataWords{lo, hi});
             return f;
         }
 

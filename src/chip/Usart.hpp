@@ -1,9 +1,13 @@
 #pragma once
 
+#include "Clocks.hpp"
+#include "Instances.hpp"
 #include "Interrupt.hpp"
 #include "Io.hpp"
-#include "kvasir/Atomic/Queue.hpp"
+#include "Rcc.hpp"
+#include "UsartQueue.hpp"
 #include "kvasir/Common/Interrupt.hpp"
+#include "kvasir/Hal/Owns.hpp"
 #include "kvasir/Register/Register.hpp"
 #include "kvasir/Util/Prescaler.hpp"
 #include "peripherals/RCC.hpp"
@@ -22,59 +26,32 @@
 //
 //     using Debug = Kvasir::Usart::Port<HW::ClockTree, 1, 115'200, TxPin, RxPin, 7>;
 //     Debug::send(bytes);                        // queued, returns at once (drops what does not fit)
-//     while(auto b = Debug::receive()) { ... }   // what arrived
+//     std::optional<std::byte> b;
+//     while(Debug::receive(b)) { ... }           // what arrived
 //
-// The interrupt moves bytes between DR and two lock-free queues (Kvasir::Atomic::Queue, one
-// producer and one consumer each). A receive overrun (ORE: a byte arrived while the last one was
+// The interrupt moves bytes between DR and two lock-free queues (UsartQueue.hpp: Atomic::Fifo, one
+// producer and one consumer each) that hold TxSize / RxSize bytes. A receive overrun (ORE: a byte arrived while the last one was
 // still in DR, 28.6.1) is cleared - SR read, then DR read - and counted.
 namespace Kvasir { namespace Usart {
-    enum class Bus { apb1, apb2 };
-
-    namespace Detail { using RCC = Kvasir::Peripheral::RCC::Registers<>; }
-
+    // The bus (RM0430 Rev 8 Table 1, Instances.hpp), the register set (its enable bit: Blocks.hpp) and the vector
+    // (Table 40) of each USART.
     template<unsigned N>
     struct Instance;
 
-    // RM0430 Table 1 (USART1/6 on APB2, USART2/3 on APB1), 6.3.15/6.3.16, Table 40.
-    template<>
-    struct Instance<1> {
-        static constexpr Bus bus = Bus::apb2;
-        using Irq                = std::remove_cvref_t<decltype(Interrupt::usart1)>;
-
-        static constexpr auto enable() {
-            return write(Detail::RCC::APB2ENR::usart1en, Register::value<std::uint32_t, 1>());
-        }
+    // clang-format off
+    template<> struct Instance<1> : Rcc::OnBusOf<Peripheral::USART::Registers<1>> {
+        using Irq = std::remove_cvref_t<decltype(Interrupt::usart1)>;
     };
-
-    template<>
-    struct Instance<2> {
-        static constexpr Bus bus = Bus::apb1;
-        using Irq                = std::remove_cvref_t<decltype(Interrupt::usart2)>;
-
-        static constexpr auto enable() {
-            return write(Detail::RCC::APB1ENR::usart2en, Register::value<std::uint32_t, 1>());
-        }
+    template<> struct Instance<2> : Rcc::OnBusOf<Peripheral::USART::Registers<2>> {
+        using Irq = std::remove_cvref_t<decltype(Interrupt::usart2)>;
     };
-
-    template<>
-    struct Instance<3> {
-        static constexpr Bus bus = Bus::apb1;
-        using Irq                = std::remove_cvref_t<decltype(Interrupt::usart3)>;
-
-        static constexpr auto enable() {
-            return write(Detail::RCC::APB1ENR::usart3en, Register::value<std::uint32_t, 1>());
-        }
+    template<> struct Instance<3> : Rcc::OnBusOf<Peripheral::USART::Registers<3>> {
+        using Irq = std::remove_cvref_t<decltype(Interrupt::usart3)>;
     };
-
-    template<>
-    struct Instance<6> {
-        static constexpr Bus bus = Bus::apb2;
-        using Irq                = std::remove_cvref_t<decltype(Interrupt::usart6)>;
-
-        static constexpr auto enable() {
-            return write(Detail::RCC::APB2ENR::usart6en, Register::value<std::uint32_t, 1>());
-        }
+    template<> struct Instance<6> : Rcc::OnBusOf<Peripheral::USART::Registers<6>> {
+        using Irq = std::remove_cvref_t<decltype(Interrupt::usart6)>;
     };
+    // clang-format on
 
     template<typename Clocks,
              unsigned      N,
@@ -91,65 +68,54 @@ namespace Kvasir { namespace Usart {
         using Regs = Kvasir::Peripheral::USART::Registers<N>;
         using Irq  = typename I::Irq;
 
-        static constexpr std::uint32_t fckHz
-          = I::bus == Bus::apb1 ? Clocks::pclk1Hz : Clocks::pclk2Hz;
+        static constexpr std::uint32_t fckHz = Clocks::template pclkHz<I::bus>;
+
+        // Startup: this block, and the bus clock its dividers are computed from (Clocks.hpp).
+        using Provides = brigand::list<Hal::Owns<Regs>>;
+        using Claims   = Hal::Claim<Kvasir::Clocks::ClkApb<I::bus>, fckHz>;
         // BRR: mantissa 12 bits, fraction 4 bits; at least 1.0 (16).
         static constexpr auto divider
           = Prescaler::fromRange(fckHz, Baud, {.first = 16, .last = 0xFFFF});
-        static constexpr bool Ok = [] {
-            Prescaler::assertInTolerance<divider.achieved, Baud, Tol, "USART baud rate">();
-            return true;
-        }();
-        static_assert(Ok);
+        static_assert(Chip::checkedInTolerance<divider.achieved,
+                                               Baud,
+                                               Tol,
+                                               "USART baud rate">);
         static constexpr std::uint32_t brr = static_cast<std::uint32_t>(divider.setting);
 
-        static constexpr auto powerClockEnable = list(I::enable());
-        static constexpr auto initStepPinConfig
-          = list(action(Io::Action::PinFunction<Af,
-                                                Io::OutputType::PushPull,
-                                                Io::OutputSpeed::High,
-                                                Io::OutputInit::High,
-                                                Io::PullConfiguration::PullUp>{},
-                        TxPin{}),
-                 action(Io::Action::PinFunction<Af,
-                                                Io::OutputType::PushPull,
-                                                Io::OutputSpeed::Low,
-                                                Io::OutputInit::Low,
-                                                Io::PullConfiguration::PullUp>{},
-                        RxPin{}));
+        static constexpr auto powerClockEnable  = I::powerClockEnable;
+        static constexpr auto initStepPinConfig = Io::txRxPins<Af, TxPin, RxPin>();
         static constexpr auto initStepPeripheryConfig
           = list(write(Regs::BRR::FULLREGISTER, Register::value<std::uint32_t, brr>()),
-                 write(Regs::CR1::te, Register::value<std::uint32_t, 1>()),
-                 write(Regs::CR1::re, Register::value<std::uint32_t, 1>()),
-                 write(Regs::CR1::rxneie, Register::value<std::uint32_t, 1>()));
+                 set(Regs::CR1::te),
+                 set(Regs::CR1::re),
+                 set(Regs::CR1::rxneie));
         static constexpr auto initStepInterruptConfig
           = list(Nvic::makeSetPriority<Priority>(Irq{}), Nvic::makeClearPending(Irq{}));
         static constexpr auto initStepPeripheryEnable
-          = list(write(Regs::CR1::ue, Register::value<std::uint32_t, 1>()),
-                 Nvic::makeEnable(Irq{}));
+          = list(set(Regs::CR1::ue), Nvic::makeEnable(Irq{}));
 
-        static inline Atomic::Queue<std::byte, TxSize, Atomic::OverFlowPolicyIgnore> txQueue{};
-        static inline Atomic::Queue<std::byte, RxSize, Atomic::OverFlowPolicyIgnore> rxQueue{};
-        static inline std::uint32_t                                                  overruns{};
-        static inline std::uint32_t                                                  rxDropped{};
+        static inline detail::ByteQueue<TxSize> txQueue{};   // holds TxSize bytes
+        static inline detail::ByteQueue<RxSize> rxQueue{};   // holds RxSize bytes
+        static inline std::uint32_t             overruns{};
+        static inline std::uint32_t             rxDropped{};
 
-        /// Queue bytes for sending; returns how many fit.
+        /// Queue bytes for sending; returns how many fit. One range push of what fits: the ISR only
+        /// takes from the queue meanwhile, so the room it had stays.
         static std::size_t send(std::span<std::byte const> bytes) {
-            std::size_t n = 0;
-            for(auto b : bytes) {
-                if(txQueue.size() >= TxSize) { break; }
-                txQueue.push(b);
-                ++n;
-            }
-            if(n != 0) { apply(write(Regs::CR1::txeie, Register::value<std::uint32_t, 1>())); }
+            std::size_t const n = detail::pushWhatFits(txQueue, bytes);
+            if(n == 0) { return 0; }
+            apply(set(Regs::CR1::txeie));
             return n;
         }
 
-        /// The next received byte, if any.
-        static std::optional<std::byte> receive() {
+        /// The next received byte, as Hal::Uart::ByteSource (kvasir/Hal/Uart.hpp): true and the byte
+        /// in `out` when one was waiting. No nullopt mark here: an overrun is counted (`overruns`),
+        /// not put in the stream.
+        static bool receive(std::optional<std::byte>& out) {
             std::byte b{};
-            if(rxQueue.pop_into(b)) { return b; }
-            return std::nullopt;
+            if(!rxQueue.popInto(b)) { return false; }
+            out = b;
+            return true;
         }
 
         [[nodiscard]] static bool txIdle() {
@@ -165,22 +131,18 @@ namespace Kvasir { namespace Usart {
             if(rxne || ore) {
                 auto const b = static_cast<std::byte>(apply(read(Regs::DR::dr)) & 0xFFU);
                 if(ore) { ++overruns; }   // SR read, then DR read: cleared
-                if(rxQueue.size() < RxSize) {
-                    rxQueue.push(b);
-                } else {
-                    ++rxDropped;
-                }
+                (void)detail::pushOrCount(rxQueue, b, rxDropped);
             }
             if(txe && apply(read(Regs::CR1::txeie)) != 0) {
                 std::byte b{};
-                if(txQueue.pop_into(b)) {
+                if(txQueue.popInto(b)) {
                     apply(write(Regs::DR::dr, static_cast<std::uint32_t>(b)));
                 } else {
-                    apply(write(Regs::CR1::txeie, Register::value<std::uint32_t, 0>()));
+                    apply(clear(Regs::CR1::txeie));
                 }
             }
         }
 
-        static constexpr Nvic::Isr<std::addressof(onIsr), Irq> isr{};
+        using Isr = Nvic::Isr<std::addressof(onIsr), Irq>;
     };
 }}   // namespace Kvasir::Usart

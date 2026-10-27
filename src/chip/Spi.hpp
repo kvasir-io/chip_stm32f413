@@ -1,7 +1,12 @@
 #pragma once
 
 #include "ClockMath.hpp"
+#include "Clocks.hpp"
+#include "Instances.hpp"
 #include "Io.hpp"
+#include "Rcc.hpp"
+#include "WaitBounds.hpp"
+#include "kvasir/Hal/Owns.hpp"
 #include "kvasir/Io/Io.hpp"
 #include "kvasir/Register/Register.hpp"
 #include "peripherals/RCC.hpp"
@@ -11,9 +16,10 @@
 #include <type_traits>
 
 // SPI master on the STM32F413 (RM0430 Rev 8 chapter 29), polled, chip select by the caller (a GPIO).
-// SCK = PCLK / 2^(BR+1) (29.7.1: BR 000 = /2 ... 111 = /256); SPI1/4/5 on APB2 reach 50 MHz,
-// SPI2/3 on APB1 25 MHz (DS11581 Rev 7 Table 67 "SPI dynamic characteristics", 2.7-3.6 V: SPI1,4,5
-// master 42 MHz from 2.7 V, 50 MHz from 3.0 V; SPI2/3 25 MHz).
+// SCK = PCLK / 2^(BR+1) (29.7.1: BR 000 = /2 ... 111 = /256), at most what DS11581 Rev 7 Table 67
+// allows for the instance, the board's supply and whether the master receives (Instances.hpp
+// `Chip::spiMaxSckHz`: SPI2/3 25 MHz; SPI1/4/5 42 MHz receiving from 2.7 V, 25 MHz below, 50 MHz
+// transmit-only).
 //
 //     using DacBus = Kvasir::Spi::Master<HW::ClockTree, 2, {25'000'000, 16}, SckPin, Kvasir::Io::NotUsed<>, MosiPin, 5>;
 //     DacBus::send(code); DacBus::waitIdle(); apply(set(csPin));
@@ -24,64 +30,17 @@
 // only (29.3.13 "Overrun flag"); transfer() drains a stale frame first, and the DR read followed
 // by the SR read clears OVR.
 namespace Kvasir { namespace Spi {
-    enum class Bus { apb1, apb2 };
-
-    namespace Detail { using RCC = Kvasir::Peripheral::RCC::Registers<>; }
-
+    // The bus (RM0430 Rev 8 Table 1, Instances.hpp) and the register set whose row in Blocks.hpp has the enable bit, of each SPI.
     template<unsigned N>
     struct Instance;
 
-    // RM0430 Table 1 (boundary addresses: SPI2/3 on APB1, SPI1/4/5 on APB2), 6.3.15/6.3.16
-    // (enable bits); DS11581 Table 67 (maximum SCK, 2.7-3.6 V).
-    template<>
-    struct Instance<1> {
-        static constexpr Bus           bus   = Bus::apb2;
-        static constexpr std::uint32_t maxHz = 42'000'000;
-
-        static constexpr auto enable() {
-            return write(Detail::RCC::APB2ENR::spi1en, Register::value<std::uint32_t, 1>());
-        }
-    };
-
-    template<>
-    struct Instance<2> {
-        static constexpr Bus           bus   = Bus::apb1;
-        static constexpr std::uint32_t maxHz = 25'000'000;
-
-        static constexpr auto enable() {
-            return write(Detail::RCC::APB1ENR::spi2en, Register::value<std::uint32_t, 1>());
-        }
-    };
-
-    template<>
-    struct Instance<3> {
-        static constexpr Bus           bus   = Bus::apb1;
-        static constexpr std::uint32_t maxHz = 25'000'000;
-
-        static constexpr auto enable() {
-            return write(Detail::RCC::APB1ENR::spi3en, Register::value<std::uint32_t, 1>());
-        }
-    };
-
-    template<>
-    struct Instance<4> {
-        static constexpr Bus           bus   = Bus::apb2;
-        static constexpr std::uint32_t maxHz = 42'000'000;
-
-        static constexpr auto enable() {
-            return write(Detail::RCC::APB2ENR::spi4en, Register::value<std::uint32_t, 1>());
-        }
-    };
-
-    template<>
-    struct Instance<5> {
-        static constexpr Bus           bus   = Bus::apb2;
-        static constexpr std::uint32_t maxHz = 42'000'000;
-
-        static constexpr auto enable() {
-            return write(Detail::RCC::APB2ENR::spi5en, Register::value<std::uint32_t, 1>());
-        }
-    };
+    // clang-format off
+    template<> struct Instance<1> : Rcc::OnBusOf<Peripheral::SPI::Registers<1>> {};
+    template<> struct Instance<2> : Rcc::OnBusOf<Peripheral::SPI::Registers<2>> {};
+    template<> struct Instance<3> : Rcc::OnBusOf<Peripheral::SPI::Registers<3>> {};
+    template<> struct Instance<4> : Rcc::OnBusOf<Peripheral::SPI::Registers<4>> {};
+    template<> struct Instance<5> : Rcc::OnBusOf<Peripheral::SPI::Registers<5>> {};
+    // clang-format on
 
     struct Config {
         std::uint32_t maxHz;   // the fastest SCK the part allows; the bus takes the next lower
@@ -103,11 +62,18 @@ namespace Kvasir { namespace Spi {
         static_assert(C.frameBits == 8 || C.frameBits == 16,
                       "SPI frames are 8 or 16 bits (CR1.DFF)");
 
-        static constexpr std::uint32_t pclkHz
-          = I::bus == Bus::apb1 ? Clocks::pclk1Hz : Clocks::pclk2Hz;
-        static constexpr unsigned br = baudBits(pclkHz, C.maxHz < I::maxHz ? C.maxHz : I::maxHz);
+        static constexpr std::uint32_t pclkHz = Clocks::template pclkHz<I::bus>;
+        // DS11581 Table 67 for this instance, the board's supply and direction (Instances.hpp): a
+        // master without MISO is a master transmitter.
+        static constexpr std::uint32_t maxSckHz
+          = Chip::spiMaxSckHz(N, Clocks::supply, !std::is_same_v<MisoPin, Io::NotUsed<>>);
+
+        // Startup: this block, and the bus clock its dividers are computed from (Clocks.hpp).
+        using Provides               = brigand::list<Hal::Owns<Regs>>;
+        using Claims                 = Hal::Claim<Kvasir::Clocks::ClkApb<I::bus>, pclkHz>;
+        static constexpr unsigned br = baudBits(pclkHz, C.maxHz < maxSckHz ? C.maxHz : maxSckHz);
         static constexpr std::uint32_t sckHz = pclkHz >> (br + 1);
-        static_assert(sckHz <= C.maxHz && sckHz <= I::maxHz,
+        static_assert(sckHz <= C.maxHz && sckHz <= maxSckHz,
                       "no BR gets SCK low enough");
         // Errata ES0372 Rev 8 2.14.4 "Corrupted last bit of data ... received in Master mode with
         // delayed SCK feedback", Table 5: a receiving master needs APB <= 84 MHz with the SCK pad at
@@ -127,54 +93,64 @@ namespace Kvasir { namespace Spi {
                 return brigand::list<>{};
             } else if constexpr(Output) {
                 // Very high speed (errata 2.14.4); SCK idles low in mode 0/1 and a pull-down keeps
-                // it there before the SPI drives it (an LTC2401 takes a high SCK at its power-on
-                // reset or a CS fall for "internal SCK mode").
+                // it there before the SPI drives it (an SPI ADC that picks its clock source from
+                // the SCK level at its power-on reset or a CS fall takes a high one for its
+                // internal-clock mode).
                 return list(
                   action(Io::Action::PinFunction<Af,
-                                                 Io::OutputType::PushPull,
-                                                 Io::OutputSpeed::VeryHigh,
-                                                 Io::OutputInit::Low,
-                                                 C.cpol ? Io::PullConfiguration::PullNone
-                                                        : Io::PullConfiguration::PullDown>{},
+                                                 Io::OutputType::pushPull,
+                                                 Io::OutputSpeed::veryHigh,
+                                                 Io::OutputInit::low,
+                                                 C.cpol ? Io::PullConfiguration::pullNone
+                                                        : Io::PullConfiguration::pullDown>{},
                          p));
             } else {
                 return list(action(Io::Action::PinFunction<Af>{}, p));
             }
         }
 
-        static constexpr auto powerClockEnable = list(I::enable());
+        static constexpr auto powerClockEnable = I::powerClockEnable;
         static constexpr auto initStepPinConfig
           = list(pin<true>(SckPin{}), pin<false>(MisoPin{}), pin<true>(MosiPin{}));
         // Master, NSS by software (SSM = SSI = 1: 29.3.5, else MODF drops it out of master mode).
         static constexpr auto initStepPeripheryConfig = list(
-          write(Regs::CR1::mstr, Register::value<std::uint32_t, 1>()),
-          write(Regs::CR1::ssm, Register::value<std::uint32_t, 1>()),
-          write(Regs::CR1::ssi, Register::value<std::uint32_t, 1>()),
+          set(Regs::CR1::mstr),
+          set(Regs::CR1::ssm),
+          set(Regs::CR1::ssi),
           write(Regs::CR1::br, Register::value<std::uint32_t, br>()),
           write(Regs::CR1::cpol, Register::value<std::uint32_t, C.cpol ? 1U : 0U>()),
           write(Regs::CR1::cpha, Register::value<std::uint32_t, C.cpha ? 1U : 0U>()),
           write(Regs::CR1::dff, Register::value<std::uint32_t, C.frameBits == 16 ? 1U : 0U>()));
-        static constexpr auto initStepPeripheryEnable
-          = list(write(Regs::CR1::spe, Register::value<std::uint32_t, 1>()));
+        static constexpr auto initStepPeripheryEnable = list(set(Regs::CR1::spe));
+
+    private:
+        // Two frames at this SCK (WaitBounds.hpp). Under the injected policy: no caller recovers
+        // from a stuck SPI today, so an application that injects Panic gets a panic here (the
+        // default, Unbounded, is the plain loop).
+        // The conditions call the flag readers rather than name the field: under Unbounded every
+        // wait is then the old `while(!txEmpty()) {}` byte for byte (code an ISR may run); a
+        // bounded policy's panic detail is 0, not SR's address.
+        using FrameBound = Kvasir::Chip::SpiFrameBound<sckHz, C.frameBits>;
 
         [[nodiscard]] static bool txEmpty() { return apply(read(Regs::SR::txe)) != 0; }
 
         [[nodiscard]] static bool rxNotEmpty() { return apply(read(Regs::SR::rxne)) != 0; }
 
+    public:
         [[nodiscard]] static bool busy() { return apply(read(Regs::SR::bsy)) != 0; }
 
         /// One frame out, the frame clocked in at the same time back.
         static Frame transfer(Frame out) {
-            while(!txEmpty()) {}
+            Register::waitUntil<FrameBound>([] { return txEmpty(); });
             apply(Register::write(Regs::DR::dr, static_cast<std::uint32_t>(out)));
-            while(!rxNotEmpty()) {}
+            Register::waitUntil<FrameBound>([] { return rxNotEmpty(); });
             return static_cast<Frame>(apply(read(Regs::DR::dr)));
         }
 
         /// One frame out without waiting for anything but room in the transmit buffer (the
         /// received frame is dropped). Follow with waitIdle() before the chip select goes up.
         static void send(Frame out) {
-            while(!txEmpty()) {}
+            Register::waitUntil<FrameBound>([] { return txEmpty(); });
             apply(Register::write(Regs::DR::dr, static_cast<std::uint32_t>(out)));
         }
 
@@ -182,8 +158,8 @@ namespace Kvasir { namespace Spi {
         /// NSS signal is managed by an arbitrary GPIO toggle and the master has to provide proper
         /// end of NSS pulse for slave").
         static void waitIdle() {
-            while(!txEmpty()) {}
-            while(busy()) {}
+            Register::waitUntil<FrameBound>([] { return txEmpty(); });
+            Register::waitUntil<FrameBound>([] { return !busy(); });
         }
     };
 }}   // namespace Kvasir::Spi

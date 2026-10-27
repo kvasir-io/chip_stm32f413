@@ -1,0 +1,2 @@
+# Driver templates instantiate.cpp does not instantiate, one reason per line. Everything else of src/chip/ is
+# instantiated there once, or has no dependent register write (non-template code compiles in the header TUs).

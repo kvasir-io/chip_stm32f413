@@ -22987,6 +22987,11 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
         <size>0x19</size>
         <usage>registers</usage>
       </addressBlock>
+      <!-- Kvasir: RM0430 Rev 8 Table 40 (md l.11268), missing in the vendor SVD -->
+      <interrupt>
+        <name>EXTI18_OTG_FS_WKUP</name>
+        <value>42</value>
+      </interrupt>
       <interrupt>
         <name>TAMP_STAMP</name>
         <description>Tamper and TimeStamp interrupts through the
@@ -34781,6 +34786,11 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
         <size>0x35</size>
         <usage>registers</usage>
       </addressBlock>
+      <!-- Kvasir: RM0430 Rev 8 Table 40 (md l.11329), missing in the vendor SVD -->
+      <interrupt>
+        <name>QUADSPI</name>
+        <value>92</value>
+      </interrupt>
       <interrupt>
         <name>PVD</name>
         <description>PVD through EXTI line detection
@@ -45936,6 +45946,11 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
         <size>0x111</size>
         <usage>registers</usage>
       </addressBlock>
+      <!-- Kvasir: RM0430 Rev 8 Table 40 (md l.11308), missing in the vendor SVD -->
+      <interrupt>
+        <name>OTG_FS</name>
+        <value>67</value>
+      </interrupt>
       <registers>
         <register>
           <name>FS_GOTGCTL</name>
@@ -47015,6 +47030,11 @@ xs:noNamespaceSchemaLocation="CMSIS-SVD_Schema_1_1.xsd">
         <size>0x11</size>
         <usage>registers</usage>
       </addressBlock>
+      <!-- Kvasir: RM0430 Rev 8 Table 40 (md l.11198), missing in the vendor SVD -->
+      <interrupt>
+        <name>WWDG</name>
+        <value>0</value>
+      </interrupt>
       <registers>
         <register>
           <name>CR</name>

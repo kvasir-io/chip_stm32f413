@@ -1,8 +1,9 @@
 name: Tests
 
-# The host tests of this chip's clock arithmetic (tests/CMakeLists.txt): most checks are static_asserts, so building is
-# the test. tests/CMakeLists.txt fetches Kvasir_SDK's headers itself when there is no checkout next to this one; the
-# core submodule brings core_cortex_m4's make_prio4_svd.py for the core SVD check.
+# test: the host tests of this chip's clock arithmetic (tests/CMakeLists.txt): most checks are static_asserts, so
+# building is the test. tests/CMakeLists.txt fetches Kvasir_SDK's headers itself when there is no checkout next to this
+# one. The core SVD check (core_prio4.svd up to date) is core_cortex_m4's own CI.
+# conformance: the chip's conformance tree (tests/conformance), Kvasir_SDK package-conformance.yml.
 
 on:
     push:
@@ -15,37 +16,12 @@ on:
 
 jobs:
     test:
-        name: ${{ matrix.compiler.cc }}
-        runs-on: ubuntu-latest
-        container:
-            image: archlinux:latest
-        strategy:
-            fail-fast: false
-            matrix:
-                compiler:
-                    - {cc: gcc, cxx: g++}
-                    - {cc: clang, cxx: clang++}
+        uses: kvasir-io/Kvasir_SDK/.github/workflows/package-host-tests.yml@master
+        with: {extra-packages: python, submodules: 'true'}
 
-        steps:
-            - name: Set up C++ environment
-              run: |
-                pacman -Syu --noconfirm --disable-download-timeout
-                pacman -S --noconfirm --disable-download-timeout git cmake ninja base-devel python ${{ matrix.compiler.cc == 'clang' && 'clang' || '' }}
+    conformance:
+        uses: kvasir-io/Kvasir_SDK/.github/workflows/package-conformance.yml@master
 
-            # core (core_cortex_m4) is the submodule needed; not recursive
-            - name: Checkout repository
-              uses: actions/checkout@v6
-              with:
-                submodules: true
-
-            - name: Configure CMake
-              run: cmake -S tests -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
-              env:
-                CC: ${{ matrix.compiler.cc }}
-                CXX: ${{ matrix.compiler.cxx }}
-
-            - name: Build tests
-              run: cmake --build build -j"$(nproc)"
-
-            - name: Run tests
-              run: ctest --test-dir build --output-on-failure
+    # the include layering of this repository against Kvasir_SDK tools/layers.toml (any finding fails)
+    layers:
+        uses: kvasir-io/Kvasir_SDK/.github/workflows/package-layers.yml@master

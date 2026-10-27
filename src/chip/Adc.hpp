@@ -1,12 +1,17 @@
 #pragma once
 
 #include "ClockMath.hpp"
+#include "Clocks.hpp"
+#include "Instances.hpp"
 #include "Io.hpp"
+#include "Rcc.hpp"
+#include "WaitBounds.hpp"
+#include "kvasir/Hal/Owns.hpp"
 #include "kvasir/Register/Register.hpp"
 #include "peripherals/ADC1.hpp"
 #include "peripherals/ADC_Common.hpp"
-#include "peripherals/RCC.hpp"
 
+#include <array>
 #include <cstdint>
 #include <optional>
 
@@ -22,7 +27,6 @@
 // impacting the ADC accuracy"): averaging is the caller's.
 namespace Kvasir { namespace Adc {
     namespace Detail {
-        using RCC    = Kvasir::Peripheral::RCC::Registers<>;
         using ADC    = Kvasir::Peripheral::ADC1::Registers<>;
         using COMMON = Kvasir::Peripheral::ADC_COMMON::Registers<>;
     }   // namespace Detail
@@ -45,11 +49,23 @@ namespace Kvasir { namespace Adc {
         static_assert(Channel <= 9,
                       "channels 10-18 (SMPR1) are not wired up yet");
         using ADC = Detail::ADC;
+        // its bus (Instances.hpp) and enable bit (Blocks.hpp)
+        using I = Rcc::OnBusOf<ADC>;
 
-        static constexpr unsigned      adcpre = Detail::prescalerBits(Clocks::pclk2Hz);
-        static constexpr std::uint32_t adcHz  = Clocks::pclk2Hz / (2 * (adcpre + 1));
+        static constexpr std::uint32_t pclkHz = Clocks::template pclkHz<I::bus>;
+        static constexpr unsigned      adcpre = Detail::prescalerBits(pclkHz);
+        static constexpr std::uint32_t adcHz  = pclkHz / (2 * (adcpre + 1));
+        // Startup: ADC1, and the bus clock the ADC prescaler divides (ADCCLK from PCLK2, 13.3.4;
+        // Clocks.hpp). One owner: a second Single would rewrite the one regular sequence (SQR3.SQ1,
+        // 13.12.11), and the first one's read() would convert the second one's channel.
+        using Provides = brigand::list<Hal::Owns<ADC>>;
+        using Claims   = Hal::Claim<Kvasir::Clocks::ClkApb<I::bus>, pclkHz>;
         static_assert(adcHz <= 36'000'000,
                       "ADC clock above 36 MHz (DS11581 Table 75)");
+        // the SMPx code's ADC clock cycles (13.12.5)
+        static constexpr std::uint64_t sampleCycles
+          = std::array<std::uint64_t,
+                       8>{3, 15, 28, 56, 84, 112, 144, 480}[static_cast<std::uint32_t>(Sample)];
 
         // SMPR2 (13.12.5): channel n's sample time at bits 3n+2:3n (the SVD has it as one field).
         static constexpr Register::FieldLocation<typename ADC::SMPR2::Addr,
@@ -58,8 +74,7 @@ namespace Kvasir { namespace Adc {
                                                  std::uint32_t>
           smp{};
 
-        static constexpr auto powerClockEnable
-          = list(write(Detail::RCC::APB2ENR::adc1en, Register::value<std::uint32_t, 1>()));
+        static constexpr auto powerClockEnable  = I::powerClockEnable;
         static constexpr auto initStepPinConfig = list(action(Io::Action::Analog{}, Pin{}));
         static constexpr auto initStepPeripheryConfig
           = list(write(Detail::COMMON::CCR::adcpre, Register::value<std::uint32_t, adcpre>()),
@@ -68,20 +83,19 @@ namespace Kvasir { namespace Adc {
                  write(ADC::SQR3::sq1, Register::value<std::uint32_t, Channel>()));
         // ADON; the ADC needs tSTAB (3 us max, Table 75) before the first conversion - the first
         // read() comes after the rest of the start-up.
-        static constexpr auto initStepPeripheryEnable
-          = list(write(ADC::CR2::adon, Register::value<std::uint32_t, 1>()));
+        static constexpr auto initStepPeripheryEnable = list(set(ADC::CR2::adon));
 
         /// One conversion, 0..4095; nullopt if EOC never came.
         static std::optional<std::uint16_t> read() {
-            apply(write(ADC::CR2::swstart, Register::value<std::uint32_t, 1>()));
-            for(unsigned i = 0; i < 100'000; ++i) {
-                if(apply(Register::read(ADC::SR::eoc)) != 0) {
-                    // Reading DR clears EOC (13.12.1).
-                    return static_cast<std::uint16_t>(apply(Register::read(ADC::DR::data))
-                                                      & 0xFFFU);
-                }
+            apply(set(ADC::CR2::swstart));
+            // bounded (WaitBounds.hpp), Report whatever policy the application injects
+            if(!Register::waitUntil<Kvasir::Chip::AdcConversionBound<adcHz, sampleCycles>,
+                                    Register::OnTimeout::Report>(Register::isSet(ADC::SR::eoc)))
+            {
+                return std::nullopt;
             }
-            return std::nullopt;
+            // Reading DR clears EOC (13.12.1).
+            return static_cast<std::uint16_t>(apply(Register::read(ADC::DR::data)) & 0xFFFU);
         }
     };
 }}   // namespace Kvasir::Adc

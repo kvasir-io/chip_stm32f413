@@ -8,6 +8,18 @@
 #include <cstdint>
 #include <optional>
 
+namespace Kvasir { namespace Chip {
+    /// Prescaler::assertInTolerance as a value, for a driver's class-scope check:
+    /// `static_assert(Chip::checkedInTolerance<divider.achieved, Baud, Tol, "USART baud rate">);` - a rate outside
+    /// the tolerance fails with Prescaler's message (wanted, got, the error and the allowance in ppm).
+    template<Prescaler::Rational     Achieved,
+             std::uint64_t           Wanted,
+             Prescaler::Tolerance    Tol,
+             Diagnostic::FixedString What>
+    inline constexpr bool checkedInTolerance
+      = (Prescaler::assertInTolerance<Achieved, Wanted, Tol, What>(), true);
+}}   // namespace Kvasir::Chip
+
 namespace Kvasir { namespace Rcc {
     namespace Detail {
         // Not constexpr and never defined: reached in a constant evaluation it is a compile error
@@ -195,4 +207,51 @@ namespace Kvasir { namespace Iwdg {
         return Setting{6, 4095};
     }
 
+    /// The timeout a setting gives at an LSI of `lsiHz`, in microseconds (rounded down): (RLR + 1) counts of the
+    /// counter clock LSI / (4 << PR) (RM0430 Rev 8 22.3, 22.4.2; md l.29060, l.29174): settingFor()'s inverse,
+    /// and the watchdog's shortest/longest timeout (Watchdog.hpp).
+    constexpr std::uint64_t periodUs(Setting       s,
+                                     std::uint32_t lsiHz) {
+        return std::uint64_t{4U << s.pr} * (s.rlr + 1) * 1'000'000 / lsiHz;
+    }
+
 }}   // namespace Kvasir::Iwdg
+
+// bxCAN's bit timing (Can.hpp Can::Bus solves its CAN_BTR from it; tests/can_timing_test.cpp). RM0430 Rev 8: a bit
+// is SYNC_SEG (one quantum, 32.7.7, md l.47301) + BS1 + BS2; CAN_BTR (32.9.2, md l.48001-48061) gives
+// tq = (BRP + 1) x tPCLK (BRP[9:0]: a divider of 1..1024), tBS1 = tq x (TS1 + 1) (TS1[3:0]: 1..16 quanta),
+// tBS2 = tq x (TS2 + 1) (TS2[2:0]: 1..8 quanta); the sample point is after SYNC_SEG + BS1. Can::Bus writes SJW 0:
+// one quantum (tRJW = tq x (SJW + 1), l.48043).
+namespace Kvasir { namespace Can {
+    struct BitTiming {
+        unsigned brp;   // the divider, BRP + 1
+        unsigned ts1;   // quanta, TS1 + 1
+        unsigned ts2;   // quanta, TS2 + 1
+        unsigned samplePermille;
+    };
+
+    // Every exact divider and split, the sample point closest to the wanted one; brp 0 = none.
+    constexpr BitTiming solveBitTiming(std::uint32_t pclkHz,
+                                       std::uint32_t bitrate,
+                                       unsigned      wantPermille) {
+        BitTiming best{0, 0, 0, 0};
+        unsigned  bestDiff = ~0U;
+        for(unsigned brp = 1; brp <= 1024; ++brp) {
+            if(pclkHz % brp != 0 || (pclkHz / brp) % bitrate != 0) { continue; }
+            unsigned const quanta = pclkHz / brp / bitrate;
+            for(unsigned ts2 = 1; ts2 <= 8; ++ts2) {
+                if(quanta < 1 + 1 + ts2) { break; }
+                unsigned const ts1 = quanta - 1 - ts2;
+                if(ts1 > 16) { continue; }
+                unsigned const sample = (1 + ts1) * 1000 / quanta;
+                unsigned const diff
+                  = sample > wantPermille ? sample - wantPermille : wantPermille - sample;
+                if(diff < bestDiff) {
+                    bestDiff = diff;
+                    best     = BitTiming{brp, ts1, ts2, sample};
+                }
+            }
+        }
+        return best;
+    }
+}}   // namespace Kvasir::Can

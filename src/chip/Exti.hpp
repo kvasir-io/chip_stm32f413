@@ -1,11 +1,13 @@
 #pragma once
 
+#include "Instances.hpp"
 #include "Interrupt.hpp"
 #include "Io.hpp"
+#include "Rcc.hpp"
 #include "kvasir/Register/Register.hpp"
+#include "kvasir/StartUp/Resources.hpp"
 #include "kvasir/StartUp/SharedIsr.hpp"
 #include "peripherals/EXTI.hpp"
-#include "peripherals/RCC.hpp"
 #include "peripherals/SYSCFG.hpp"
 
 #include <cstdint>
@@ -26,47 +28,33 @@ namespace Kvasir { namespace Exti {
     namespace Detail {
         using EXTI   = Kvasir::Peripheral::EXTI::Registers<>;
         using SYSCFG = Kvasir::Peripheral::SYSCFG::Registers<>;
-        using RCC    = Kvasir::Peripheral::RCC::Registers<>;
 
+        // the line's own generated field of IMR, RTSR, FTSR (MRn, TRn) and PR (PRn, write-one-to-clear in chip.svd)
         template<typename Reg, unsigned Line>
-        using Bit = Register::
-          FieldLocation<typename Reg::Addr, (1U << Line), Register::ReadWriteAccess, std::uint32_t>;
+        using Bit = Register::FieldAt<Reg, Line>;
+
+        // SYSCFG_EXTICR1-4 hold lines 0-3, 4-7, 8-11, 12-15, four bits a line (8.2.3-8.2.6)
+        using Exticrs
+          = brigand::list<SYSCFG::EXTICR1, SYSCFG::EXTICR2, SYSCFG::EXTICR3, SYSCFG::EXTICR4>;
 
         template<unsigned Line>
-        struct Exticr;
-
-        template<>
-        struct Exticr<0> {
-            using type = SYSCFG::EXTICR1;
-        };
-
-        template<>
-        struct Exticr<1> {
-            using type = SYSCFG::EXTICR2;
-        };
-
-        template<>
-        struct Exticr<2> {
-            using type = SYSCFG::EXTICR3;
-        };
-
-        template<>
-        struct Exticr<3> {
-            using type = SYSCFG::EXTICR4;
-        };
-
-        template<unsigned Line>
-        using PortSelect = Register::FieldLocation<typename Exticr<Line / 4>::type::Addr,
-                                                   (0xFU << ((Line % 4) * 4)),
-                                                   Register::ReadWriteAccess,
-                                                   std::uint32_t>;
+        using PortSelect
+          = Register::FieldAt<brigand::at_c<Exticrs, Line / 4>, (Line % 4) * 4>;   // EXTIn
     }   // namespace Detail
+
+    /// One EXTI line listens to one port (SYSCFG_EXTICRx, RM0430 Rev 8 8.2.3-8.2.6): a second Line on
+    /// the same line number - another port's pin n - would rewrite EXTICR (the last one wins) and
+    /// run both callbacks on every edge, so each Line provides its line and two are a build error
+    /// ("EXTI line 4"). The SYSCFG and EXTI clock enables are shared by every line and provide nothing.
+    struct ExtiLineTag {
+        static constexpr char const* describeAs = "EXTI line";
+    };
 
     template<typename Pin,
              Edge                  E,
              auto                  Fn,
              int                   Priority = -1,
-             Io::PullConfiguration Pull     = Io::PullConfiguration::PullNone>
+             Io::PullConfiguration Pull     = Io::PullConfiguration::pullNone>
     struct Line {
         static constexpr unsigned line = static_cast<unsigned>(Pin::pin);
         static constexpr unsigned port = static_cast<unsigned>(Pin::port);
@@ -74,6 +62,8 @@ namespace Kvasir { namespace Exti {
                       "GPIO lines are EXTI 0 to 15");
 
         using Vector = Interrupt::ExtiVector<line>;
+
+        using Provides = brigand::list<Startup::Resource<ExtiLineTag, line>>;
 
         static constexpr Detail::Bit<Detail::EXTI::IMR, line>  imr{};
         static constexpr Detail::Bit<Detail::EXTI::PR, line>   pr{};
@@ -83,10 +73,10 @@ namespace Kvasir { namespace Exti {
 
         // SYSCFG for EXTICR, and EXTI's own APB clock: RCC_APB2ENR bit 15 EXITEN (RM0430 Rev 8
         // 6.3.16; missing from ST's SVD, added in chip.svd). Without it the EXTI registers take no
-        // write - IMR/RTSR read back 0 and no edge ever interrupts.
+        // write - IMR/RTSR read back 0 and no edge ever interrupts. Both are Blocks.hpp rows.
         static constexpr auto powerClockEnable
-          = list(write(Detail::RCC::APB2ENR::syscfgen, Register::value<std::uint32_t, 1>()),
-                 write(Detail::RCC::APB2ENR::extiten, Register::value<std::uint32_t, 1>()));
+          = list(Rcc::OnBusOf<Detail::SYSCFG>::powerClockEnable,
+                 Rcc::OnBusOf<Detail::EXTI>::powerClockEnable);
         static constexpr auto initStepPinConfig = list(action(Io::Action::Input<Pull>{}, Pin{}));
         static constexpr auto initStepPeripheryConfig = list(
           write(portSelect, Register::value<std::uint32_t, port>()),   // write() shifts into place
