@@ -94,15 +94,15 @@ namespace Kvasir { namespace Usart {
         static constexpr auto initStepPeripheryEnable
           = list(set(Regs::CR1::ue), Nvic::makeEnable(Irq{}));
 
-        static inline detail::ByteQueue<TxSize> txQueue{};   // holds TxSize bytes
-        static inline detail::ByteQueue<RxSize> rxQueue{};   // holds RxSize bytes
+        static inline Detail::ByteQueue<TxSize> txQueue{};   // holds TxSize bytes
+        static inline Detail::ByteQueue<RxSize> rxQueue{};   // holds RxSize bytes
         static inline std::uint32_t             overruns{};
         static inline std::uint32_t             rxDropped{};
 
         /// Queue bytes for sending; returns how many fit. One range push of what fits: the ISR only
         /// takes from the queue meanwhile, so the room it had stays.
         static std::size_t send(std::span<std::byte const> bytes) {
-            std::size_t const n = detail::pushWhatFits(txQueue, bytes);
+            std::size_t const n = Detail::pushWhatFits(txQueue, bytes);
             if(n == 0) { return 0; }
             apply(set(Regs::CR1::txeie));
             return n;
@@ -131,7 +131,7 @@ namespace Kvasir { namespace Usart {
             if(rxne || ore) {
                 auto const b = static_cast<std::byte>(apply(read(Regs::DR::dr)) & 0xFFU);
                 if(ore) { ++overruns; }   // SR read, then DR read: cleared
-                (void)detail::pushOrCount(rxQueue, b, rxDropped);
+                (void)Detail::pushOrCount(rxQueue, b, rxDropped);
             }
             if(txe && apply(read(Regs::CR1::txeie)) != 0) {
                 std::byte b{};

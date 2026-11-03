@@ -11,7 +11,7 @@
 #include <cstdint>
 #include <span>
 
-namespace Kvasir { namespace Usart { namespace detail {
+namespace Kvasir { namespace Usart { namespace Detail {
     template<std::size_t N>
     using ByteQueue = Atomic::Fifo<std::byte, N, Atomic::OverflowPolicyIgnore>;
 
@@ -37,4 +37,4 @@ namespace Kvasir { namespace Usart { namespace detail {
         ++dropped;
         return false;
     }
-}}}   // namespace Kvasir::Usart::detail
+}}}   // namespace Kvasir::Usart::Detail

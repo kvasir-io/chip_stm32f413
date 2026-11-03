@@ -8,9 +8,9 @@
 #include <cstdio>
 
 namespace {
-using Kvasir::Usart::detail::ByteQueue;
-using Kvasir::Usart::detail::pushOrCount;
-using Kvasir::Usart::detail::pushWhatFits;
+using Kvasir::Usart::Detail::ByteQueue;
+using Kvasir::Usart::Detail::pushOrCount;
+using Kvasir::Usart::Detail::pushWhatFits;
 
 static_assert(ByteQueue<16>::capacity() == 16);
 static_assert(ByteQueue<256>::capacity() == 256,

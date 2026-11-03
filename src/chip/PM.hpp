@@ -13,12 +13,12 @@
 // (a Startup entry) and Boot::logBoot (main) both read it. Call it after initMemory() only, never from
 // coreClockInit(): the latch is in .bss, and the memory init would wipe it after the flags were already cleared.
 namespace Kvasir { namespace PM {
-    namespace detail {
+    namespace Detail {
         inline std::uint8_t latchedCause{};   // .bss: 0 unread, else ResetCause + 1
     }
 
     inline ResetCause resetCause() {
-        if(detail::latchedCause == 0) {
+        if(Detail::latchedCause == 0) {
             using CSR          = Kvasir::Peripheral::RCC::Registers<>::CSR;
             auto const       r = apply(read(CSR::lpwrrstf),
                                        read(CSR::wwdgrstf),
@@ -35,9 +35,9 @@ namespace Kvasir { namespace PM {
                                              .bor  = r[CSR::borrstf] != 0,
                                              .pin  = r[CSR::padrstf] != 0});
             apply(set(CSR::rmvf));
-            detail::latchedCause = static_cast<std::uint8_t>(std::to_underlying(cause) + 1);
+            Detail::latchedCause = static_cast<std::uint8_t>(std::to_underlying(cause) + 1);
         }
-        return static_cast<ResetCause>(detail::latchedCause - 1);
+        return static_cast<ResetCause>(Detail::latchedCause - 1);
     }
 
     /// resetCause() mapped onto the SDK's ResetKind (ResetCause.hpp toResetKind), for the boot guard.
