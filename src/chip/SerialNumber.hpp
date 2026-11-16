@@ -16,7 +16,8 @@ namespace SerialNumber {
 }   // namespace SerialNumber
 
 /// The chip's 96-bit unique ID: its three words from U_ID[31:0] up, each copied in memory byte order (as the SAM
-/// chips' serialNumber()). Memory::loadPlain: an aligned, non-volatile load (the words never change).
+/// chips' serialNumber()). Memory::loadPlain: an aligned, non-volatile load (the words never change). Not a word array
+/// std::bit_cast to bytes: that one goes through the stack and a memcpy call (24 -> 40 B, clang -Os).
 inline std::array<std::byte,
                   12>
 serialNumber() {
